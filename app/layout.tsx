@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
-import "./globals.css";
+import { ClerkProvider } from "@clerk/nextjs";
 import { Geist } from "next/font/google";
+
+import { clerkAppearance } from "@/lib/clerk-appearance";
 import { cn } from "@/lib/utils";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+import "./globals.css";
+
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "Gosty AI",
@@ -18,7 +22,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={cn("dark", "font-sans", geist.variable)}>
       <body className="min-h-screen bg-background text-foreground antialiased">
-        {children}
+        <ClerkProvider appearance={clerkAppearance}>{children}</ClerkProvider>
       </body>
     </html>
   );
