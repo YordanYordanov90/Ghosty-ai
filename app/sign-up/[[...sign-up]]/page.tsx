@@ -1,6 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
 import { SignUp } from "@clerk/nextjs";
-import { redirect } from "next/navigation";
 
 import { AuthRouteShell } from "@/components/auth/auth-route-shell";
 import {
@@ -8,18 +6,14 @@ import {
   getClerkSignUpForceRedirectUrl,
 } from "@/lib/clerk-auth-paths";
 
-export default async function Home() {
-  const { userId } = await auth();
-  if (userId) {
-    redirect("/editor");
-  }
-
-  const { signInPath } = getClerkAuthPaths();
+export default function SignUpPage() {
+  const { signInPath, signUpPath } = getClerkAuthPaths();
 
   return (
     <AuthRouteShell>
       <SignUp
-        routing="hash"
+        routing="path"
+        path={signUpPath}
         signInUrl={signInPath}
         forceRedirectUrl={getClerkSignUpForceRedirectUrl()}
       />

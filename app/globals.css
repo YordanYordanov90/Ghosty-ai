@@ -145,3 +145,44 @@
     @apply font-sans;
   }
 }
+
+/* Clerk overrides — unlayered so they win over Clerk's layered stylesheet */
+.cl-socialButtonsBlockButton:hover {
+  background: var(--bg-subtle) !important;
+  border-color: var(--accent-primary) !important;
+}
+
+.cl-formButtonPrimary:hover {
+  opacity: 0.88;
+}
+
+/* UserButton popover + UserProfile modal — kill light overlay / footer gradients */
+.cl-modalBackdrop {
+  background-color: rgba(8, 8, 9, 0.92);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cl-modalBackdrop {
+    backdrop-filter: blur(8px);
+  }
+}
+
+.cl-userButtonPopoverFooter {
+  background-color: #0d0d10;
+  background-image: none;
+}
+
+.cl-userButtonPopoverActionButton,
+.cl-userButtonPopoverActionButton span {
+  color: #f0f0f4;
+}
+
+.cl-userButtonPopoverActionButtonIcon,
+.cl-userButtonPopoverActionButton svg {
+  color: #00c8d4;
+}
+
+.cl-navbar {
+  background-color: #111114;
+  background-image: none;
+}

@@ -2,7 +2,7 @@
 
 ## Theme
 
-**Dark only. No light mode.** The visual language is a dark, professional trading workspace — near-black backgrounds, subtle layered surfaces, and vibrant accent colors for interactive elements and key trading signals. This design reduces eye strain during long market hours and creates a premium, high-tech feel that builds user trust in the Grok-powered strategy generator.
+**Dark only. No light mode.** TDark only. No light mode. The visual language is a dark technical workspace — near-black backgrounds, layered surfaces, and vivid accent colors for interactive elements.
 
 All colors are defined as CSS custom properties in `globals.css` and mapped to Tailwind tokens via `@theme inline`. **Components must use these tokens — no hardcoded hex values or raw Tailwind color classes like `zinc-*`.**
 
