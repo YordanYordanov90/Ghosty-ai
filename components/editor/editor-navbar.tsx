@@ -28,20 +28,18 @@ export function EditorNavbar({
       )}
     >
       <div className="flex w-full items-center justify-between gap-3 px-3">
-        <div className="flex min-w-0 flex-1 items-center justify-start">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-expanded={sidebarOpen}
-            aria-label={sidebarOpen ? "Close project sidebar" : "Open project sidebar"}
-            onClick={onSidebarToggle}
-          >
-            <Icon className="size-4" />
-          </Button>
-        </div>
-        <div className="flex min-w-0 flex-1 items-center justify-center" />
-        <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-expanded={sidebarOpen}
+          aria-label={sidebarOpen ? "Close project sidebar" : "Open project sidebar"}
+          onClick={onSidebarToggle}
+        >
+          <Icon className="size-4" />
+        </Button>
+
+        <div className="flex shrink-0 items-center">
           <UserButton
             appearance={{
               ...clerkAppearance.userButton,
