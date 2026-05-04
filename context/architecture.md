@@ -7,7 +7,7 @@
 | Framework        | Next.js 16 + TypeScript | Full-stack app with server/client boundaries                   |
 | UI               | Tailwind + shadcn/ui    | Component composition and styling                              |
 | Auth             | Clerk                   | User identity and route protection                             |
-| Database         | Prisma + PostgreSQL     | Relational metadata: projects, collaborators, specs, task runs |
+| Database         | Drizzle ORM + PostgreSQL | Relational metadata: projects, collaborators, specs, task runs |
 | Canvas           | Liveblocks + React Flow | Real-time collaborative canvas, presence, and cursors          |
 | Background tasks | Trigger.dev             | Durable AI generation workflows                                |
 | Artifact storage | Vercel Blob             | Canvas snapshots and generated Markdown specs                  |
@@ -16,16 +16,15 @@
 
 - `app/api` — Authenticated request handlers: input validation, ownership checks, task triggering, and persistence.
 - `trigger` — Long-running background jobs: AI design generation and spec generation.
-- `lib` — Shared infrastructure: Prisma client, access control helpers, and utilities.
+- `lib` — Shared infrastructure: Drizzle ORM client, access control helpers, and utilities.
 - `components` — UI composition: canvas surfaces, sidebars, dialogs, and interactive elements.
-- `prisma` — Database schema and generated client output.
 - `data` — Legacy local directory. Not used for new artifacts.
 
 ## Storage Model
 
-- **Database**: metadata, ownership, relationships, and task run records.
+- **Database** (Drizzle ORM + PostgreSQL): metadata, ownership, relationships, and task run records.
 - **Vercel Blob**: generated artifacts — canvas snapshots at `canvas/{projectId}.json` and specs at `specs/{projectId}/{specId}.md`.
-- Project records, spec records, and task run records belong in PostgreSQL.
+- Project records, spec records, and task run records belong in PostgreSQL and are accessed via Drizzle ORM.
 - Canvas content and Markdown output are stored in and retrieved from Vercel Blob.
 - The blob URL is stored in the database (`canvasJsonPath`, `filePath`) as the reference to the artifact.
 

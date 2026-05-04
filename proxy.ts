@@ -8,6 +8,8 @@ const isPublicRoute = createRouteMatcher([
   "/",
   `${signInPath}(.*)`,
   `${signUpPath}(.*)`,
+  // Project REST handlers return JSON 401; avoid auth.protect() redirect for fetch clients
+  "/api/projects(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

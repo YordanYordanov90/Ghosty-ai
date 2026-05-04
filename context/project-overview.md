@@ -2,7 +2,7 @@
 
 ## Overview
 
-Ghost AI is a real-time collaborative system design workspace. Users describe a system in plain English, an AI agent maps that system onto a shared canvas, collaborators refine the architecture, and the app generates a technical specification from the resulting graph.
+Ghosty AI is a real-time collaborative system design workspace. Users describe a system in plain English, an AI agent maps that system into a shared canvas, collaborators refine the architecture, and the app generates a technical specification from the resulting graph.
 
 ## Goals
 
@@ -89,3 +89,4 @@ Ghost AI is a real-time collaborative system design workspace. Users describe a 
 4. AI can generate an architecture into the shared room from a prompt.
 5. The graph can be converted into a persisted Markdown spec.
 6. Project metadata and generated artifacts are stored in the correct layers.
+
