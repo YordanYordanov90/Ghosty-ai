@@ -8,7 +8,7 @@ import { db } from "@/lib/db"
 
 export const runtime = "nodejs"
 
-const projectIdParamSchema = z.string().uuid()
+const projectIdParamSchema = z.uuid()
 
 const patchBodySchema = z.object({
   name: z.string().max(2000),

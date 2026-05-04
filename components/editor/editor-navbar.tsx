@@ -23,11 +23,11 @@ export function EditorNavbar({
   return (
     <header
       className={cn(
-        "fixed inset-x-0 top-0 z-50 flex h-14 shrink-0 items-stretch border-b border-border bg-background",
+        "fixed inset-x-0 top-0 z-50 flex h-14 shrink-0 items-stretch border-b border-border/60 bg-background/75 backdrop-blur-md supports-backdrop-filter:bg-background/65",
         className
       )}
     >
-      <div className="flex w-full items-center justify-between gap-3 px-3">
+      <div className="grid h-full w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4">
         <Button
           type="button"
           variant="ghost"
@@ -39,7 +39,11 @@ export function EditorNavbar({
           <Icon className="size-4" />
         </Button>
 
-        <div className="flex shrink-0 items-center">
+        <h1 className="min-w-0 truncate text-center text-sm font-semibold tracking-tight text-foreground">
+          Editor
+        </h1>
+
+        <div className="flex items-center justify-end">
           <UserButton
             appearance={{
               ...clerkAppearance.userButton,
