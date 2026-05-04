@@ -12,9 +12,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import type { UseEditorProjectDialogsResult } from "@/hooks/use-editor-project-dialogs";
+import type { UseEditorProjectActionsResult } from "@/hooks/use-editor-project-actions";
 
-export type ProjectDialogsProps = UseEditorProjectDialogsResult;
+export type ProjectDialogsProps = UseEditorProjectActionsResult;
 
 export function ProjectDialogs({
   dialogOpen,
@@ -23,11 +23,13 @@ export function ProjectDialogs({
   createName,
   setCreateName,
   createSlugPreview,
+  createRoomPreview,
   createSlugValid,
   renameSlugValid,
   renameName,
   setRenameName,
   loading,
+  lastError,
   targetProject,
   submitCreate,
   submitRename,
@@ -37,7 +39,7 @@ export function ProjectDialogs({
     if (!dialogOpen.rename) return;
     const id = window.requestAnimationFrame(() => {
       const el = document.getElementById(
-        "project-rename-name"
+        "project-rename-name",
       ) as HTMLInputElement | null;
       el?.focus();
       el?.select();
@@ -62,6 +64,8 @@ export function ProjectDialogs({
               <DialogTitle>Create project</DialogTitle>
               <DialogDescription>
                 Use lowercase letters, numbers, and hyphens only (URL-safe slug).
+                The saved project id matches the workspace URL and your Liveblocks
+                room id.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-3 py-2">
@@ -85,6 +89,17 @@ export function ProjectDialogs({
                   {createSlugPreview.length > 0 ? createSlugPreview : "—"}
                 </span>
               </p>
+              <p className="text-xs text-muted-foreground">
+                Room ID preview (stored name):{" "}
+                <span className="font-mono text-foreground">
+                  {createRoomPreview.length > 0 ? createRoomPreview : "—"}
+                </span>
+              </p>
+              {lastError != null && dialogOpen.create ? (
+                <p className="text-xs text-destructive" role="alert">
+                  {lastError}
+                </p>
+              ) : null}
             </div>
             <DialogFooter>
               <Button
@@ -117,7 +132,7 @@ export function ProjectDialogs({
             <DialogHeader>
               <DialogTitle>Rename project</DialogTitle>
               <DialogDescription>
-                Current slug:{" "}
+                Current name:{" "}
                 <span className="font-medium text-foreground">
                   {targetProject?.name ?? "—"}
                 </span>
@@ -125,7 +140,7 @@ export function ProjectDialogs({
             </DialogHeader>
             <div className="grid gap-2 py-2">
               <label htmlFor="project-rename-name" className="text-sm font-medium">
-                New slug
+                New name (slug)
               </label>
               <Input
                 id="project-rename-name"
@@ -135,6 +150,11 @@ export function ProjectDialogs({
                 disabled={loading}
                 spellCheck={false}
               />
+              {lastError != null && dialogOpen.rename ? (
+                <p className="text-xs text-destructive" role="alert">
+                  {lastError}
+                </p>
+              ) : null}
             </div>
             <DialogFooter>
               <Button
@@ -168,6 +188,11 @@ export function ProjectDialogs({
               from your workspace. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
+          {lastError != null && dialogOpen.delete ? (
+            <p className="text-xs text-destructive" role="alert">
+              {lastError}
+            </p>
+          ) : null}
           <DialogFooter>
             <Button
               type="button"

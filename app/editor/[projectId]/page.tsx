@@ -1,11 +1,23 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { z } from "zod";
 
 import { EditorShell } from "@/components/editor/editor-shell";
 import { getClerkAuthPaths } from "@/lib/clerk-auth-paths";
 import { fetchEditorProjectsData } from "@/lib/editor-projects-data";
 
-export default async function EditorPage() {
+const projectIdSchema = z.string().uuid();
+
+export default async function EditorWorkspacePage({
+  params,
+}: {
+  params: Promise<{ projectId: string }>;
+}) {
+  const { projectId } = await params;
+  if (!projectIdSchema.safeParse(projectId).success) {
+    notFound();
+  }
+
   const { userId } = await auth();
   if (!userId) {
     redirect(getClerkAuthPaths().signInPath);
@@ -26,7 +38,7 @@ export default async function EditorPage() {
     <EditorShell
       initialMyProjects={myProjects}
       initialSharedProjects={sharedProjects}
-      workspaceId={null}
+      workspaceId={projectId}
     />
   );
 }
