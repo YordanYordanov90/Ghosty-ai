@@ -23,22 +23,7 @@ export interface AuthMarketingPanelProps {
 
 export function AuthMarketingPanel({ className }: AuthMarketingPanelProps) {
   return (
-    <>
-      <style>{`
-        @keyframes auth-marketing-node-pulse {
-          0%, 100% {
-            opacity: 0.4;
-          }
-          50% {
-            opacity: 0.8;
-          }
-        }
-        .auth-marketing-node-pulse {
-          animation: auth-marketing-node-pulse 4s ease-in-out infinite;
-        }
-      `}</style>
-
-      <div
+    <div
         className={cn(
           "relative flex min-h-full w-full flex-col overflow-hidden bg-surface text-foreground",
           className,
@@ -52,12 +37,8 @@ export function AuthMarketingPanel({ className }: AuthMarketingPanelProps) {
           <div className="absolute -bottom-[20%] -right-[15%] h-[min(85%,42rem)] w-[min(85%,42rem)] rounded-full bg-[radial-gradient(circle_closest-side,var(--accent-primary)_0%,transparent_100%)] opacity-[0.08]" />
           <div className="absolute -left-[18%] -top-[18%] h-[min(65%,28rem)] w-[min(65%,28rem)] rounded-full bg-[radial-gradient(circle_closest-side,var(--accent-ai)_0%,transparent_100%)] opacity-[0.06]" />
           <div
-            className="absolute inset-0 opacity-[0.35]"
-            style={{
-              backgroundImage:
-                "radial-gradient(circle, var(--border-default) 1px, transparent 1px)",
-              backgroundSize: "24px 24px",
-            }}
+            className="editor-canvas-dots absolute inset-0 opacity-[0.35]"
+            aria-hidden
           />
         </div>
 
@@ -147,6 +128,5 @@ export function AuthMarketingPanel({ className }: AuthMarketingPanelProps) {
           </p>
         </footer>
       </div>
-    </>
   );
 }

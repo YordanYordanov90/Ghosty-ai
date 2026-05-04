@@ -146,6 +146,33 @@
   }
 }
 
+/* Shared: auth marketing panel + editor canvas decorative nodes */
+@keyframes auth-marketing-node-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.auth-marketing-node-pulse {
+  animation: auth-marketing-node-pulse 4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-marketing-node-pulse {
+    animation: none;
+  }
+}
+
+/* Editor canvas: dot grid (design tokens, no inline styles) */
+.editor-canvas-dots {
+  background-image: radial-gradient(circle, var(--border-default) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
 /* Clerk overrides — unlayered so they win over Clerk's layered stylesheet */
 .cl-socialButtonsBlockButton:hover {
   background: var(--bg-subtle) !important;

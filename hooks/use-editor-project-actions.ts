@@ -252,8 +252,9 @@ export function useEditorProjectActions({
       setTargetId(null);
       if (wasActive) {
         router.push("/editor");
+      } else {
+        router.refresh();
       }
-      router.refresh();
     } finally {
       setLoading(false);
     }
