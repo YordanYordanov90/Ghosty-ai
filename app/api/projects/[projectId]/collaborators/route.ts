@@ -58,6 +58,39 @@ async function getProjectForUser(projectId: string, userId: string, email: strin
   return { project, canView, canManage: false }
 }
 
+interface ShareOwnerPayload {
+  userId: string
+  displayName: string | null
+  avatarUrl: string | null
+  email: string | null
+}
+
+async function enrichOwnerFromClerk(ownerId: string): Promise<ShareOwnerPayload> {
+  const base: ShareOwnerPayload = {
+    userId: ownerId,
+    displayName: null,
+    avatarUrl: null,
+    email: null,
+  }
+  try {
+    const client = await clerkClient()
+    const user = await client.users.getUser(ownerId)
+    const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ").trim()
+    return {
+      userId: ownerId,
+      displayName:
+        fullName ||
+        user.username ||
+        user.primaryEmailAddress?.emailAddress ||
+        null,
+      avatarUrl: user.imageUrl ?? null,
+      email: user.primaryEmailAddress?.emailAddress ?? null,
+    }
+  } catch {
+    return base
+  }
+}
+
 async function enrichCollaboratorsWithClerk(
   rows: Array<{ collaboratorEmail: string; createdAt: Date }>,
 ) {
@@ -129,10 +162,14 @@ export async function GET(
     .where(eq(projectCollaborators.projectId, projectId))
     .orderBy(projectCollaborators.createdAt)
 
-  const collaborators = await enrichCollaboratorsWithClerk(collaboratorRows)
+  const [collaborators, owner] = await Promise.all([
+    enrichCollaboratorsWithClerk(collaboratorRows),
+    enrichOwnerFromClerk(access.project.ownerId),
+  ])
   return NextResponse.json({
     collaborators,
     canManageAccess: access.canManage,
+    owner,
   })
 }
 
