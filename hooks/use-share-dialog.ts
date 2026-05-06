@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -11,9 +11,17 @@ export interface ShareCollaborator {
   createdAt: string
 }
 
+export interface ShareOwner {
+  userId: string
+  displayName: string | null
+  avatarUrl: string | null
+  email: string | null
+}
+
 interface CollaboratorsResponse {
   collaborators: ShareCollaborator[]
   canManageAccess: boolean
+  owner: ShareOwner
 }
 
 export interface UseShareDialogResult {
@@ -22,17 +30,20 @@ export interface UseShareDialogResult {
   inviting: boolean
   removingEmail: string | null
   canManageAccess: boolean
+  owner: ShareOwner | null
   inviteEmail: string
   inviteEmailValid: boolean
   collaborators: ShareCollaborator[]
   copyLabel: string
   error: string | null
+  peopleTotal: number
   setOpen: (open: boolean) => void
   setInviteEmail: (value: string) => void
   refresh: () => Promise<void>
   invite: () => Promise<void>
   remove: (email: string) => Promise<void>
   copyLink: () => Promise<void>
+  workspaceUrl: string
 }
 
 export function useShareDialog(projectId: string): UseShareDialogResult {
@@ -41,6 +52,7 @@ export function useShareDialog(projectId: string): UseShareDialogResult {
   const [inviting, setInviting] = useState(false)
   const [removingEmail, setRemovingEmail] = useState<string | null>(null)
   const [canManageAccess, setCanManageAccess] = useState(false)
+  const [owner, setOwner] = useState<ShareOwner | null>(null)
   const [inviteEmail, setInviteEmail] = useState("")
   const [collaborators, setCollaborators] = useState<ShareCollaborator[]>([])
   const [copyLabel, setCopyLabel] = useState("Copy link")
@@ -50,6 +62,16 @@ export function useShareDialog(projectId: string): UseShareDialogResult {
     () => EMAIL_REGEX.test(inviteEmail.trim().toLowerCase()),
     [inviteEmail],
   )
+
+  const peopleTotal = useMemo(
+    () => (owner ? 1 : 0) + collaborators.length,
+    [owner, collaborators.length],
+  )
+
+  const workspaceUrl = useMemo(() => {
+    if (typeof window === "undefined") return ""
+    return `${window.location.origin}/editor/${projectId}`
+  }, [projectId])
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -71,21 +93,32 @@ export function useShareDialog(projectId: string): UseShareDialogResult {
         setError(message)
         return
       }
-      if (!body || !("collaborators" in body)) {
+      if (
+        !body ||
+        !("collaborators" in body) ||
+        !body.owner ||
+        typeof body.owner.userId !== "string"
+      ) {
         setError("Invalid server response")
         return
       }
       setCollaborators(body.collaborators)
       setCanManageAccess(body.canManageAccess)
+      setOwner(body.owner)
     } finally {
       setLoading(false)
     }
   }, [projectId])
 
-  useEffect(() => {
-    if (!open) return
-    void refresh()
-  }, [open, refresh])
+  const setOpenWithRefresh = useCallback(
+    (next: boolean) => {
+      setOpen(next)
+      if (next) {
+        void refresh()
+      }
+    },
+    [refresh],
+  )
 
   const invite = useCallback(async () => {
     if (!inviteEmailValid) return
@@ -149,7 +182,11 @@ export function useShareDialog(projectId: string): UseShareDialogResult {
   )
 
   const copyLink = useCallback(async () => {
-    const url = `${window.location.origin}/editor/${projectId}`
+    const url =
+      typeof window === "undefined"
+        ? ""
+        : `${window.location.origin}/editor/${projectId}`
+    if (!url) return
     await navigator.clipboard.writeText(url)
     setCopyLabel("Copied!")
     window.setTimeout(() => setCopyLabel("Copy link"), 1200)
@@ -161,16 +198,19 @@ export function useShareDialog(projectId: string): UseShareDialogResult {
     inviting,
     removingEmail,
     canManageAccess,
+    owner,
     inviteEmail,
     inviteEmailValid,
     collaborators,
     copyLabel,
     error,
-    setOpen,
+    peopleTotal,
+    setOpen: setOpenWithRefresh,
     setInviteEmail,
     refresh,
     invite,
     remove,
     copyLink,
+    workspaceUrl,
   }
 }

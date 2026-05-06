@@ -3,7 +3,6 @@ import { Pool } from "pg"
 import * as schema from "@/drizzle/schema"
 
 declare global {
-  // eslint-disable-next-line no-var -- preserve singleton across HMR in dev
   var ghostyDbPool: Pool | undefined
 }
 

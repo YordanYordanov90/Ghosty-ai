@@ -1,7 +1,7 @@
 "use client";
 
 import type { SetStateAction } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -66,10 +66,8 @@ export function useEditorProjectActions({
   activeWorkspaceId,
 }: UseEditorProjectActionsOptions): UseEditorProjectActionsResult {
   const router = useRouter();
-  const [myProjects, setMyProjects] = useState(initialMyProjects);
-  const [sharedProjects, setSharedProjects] = useState(
-    initialSharedProjects,
-  );
+  const myProjects = initialMyProjects
+  const sharedProjects = initialSharedProjects
   const [activeDialog, setActiveDialog] = useState<EditorProjectDialog>(null);
   const [targetId, setTargetId] = useState<string | null>(null);
   const [createName, setCreateNameState] = useState("");
@@ -77,11 +75,6 @@ export function useEditorProjectActions({
   const [renameName, setRenameNameState] = useState("");
   const [loading, setLoading] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setMyProjects(initialMyProjects);
-    setSharedProjects(initialSharedProjects);
-  }, [initialMyProjects, initialSharedProjects]);
 
   const setCreateName = useCallback((value: SetStateAction<string>) => {
     setCreateNameState((prev) => {
@@ -98,8 +91,9 @@ export function useEditorProjectActions({
   }, []);
 
   const targetProject = useMemo(
-    () => myProjects.find((p) => p.id === targetId),
-    [myProjects, targetId],
+    () =>
+      [...myProjects, ...sharedProjects].find((p) => p.id === targetId),
+    [myProjects, sharedProjects, targetId],
   );
 
   const createSlugPreview = useMemo(
