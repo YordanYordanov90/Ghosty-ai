@@ -31,12 +31,15 @@ export function EditorNavbar({
         <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
+          size="sm"
           aria-expanded={sidebarOpen}
+          title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
           aria-label={sidebarOpen ? "Close project sidebar" : "Open project sidebar"}
           onClick={onSidebarToggle}
+          className="gap-2"
         >
           <Icon className="size-4" />
+          <span className="hidden sm:inline">Projects</span>
         </Button>
 
         <h1 className="min-w-0 truncate text-center text-sm font-semibold tracking-tight text-foreground">

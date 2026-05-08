@@ -21,11 +21,14 @@ function EditorShellShareToolbar({ projectId }: { projectId: string }) {
       <Button
         type="button"
         variant="ghost"
-        size="icon-sm"
+        size="sm"
+        title="Share"
         aria-label="Share project"
         onClick={() => share.setOpen(true)}
+        className="gap-2"
       >
         <Share className="size-4" />
+        <span className="hidden sm:inline">Share</span>
       </Button>
     </>
   );
@@ -58,12 +61,15 @@ export function EditorShell({
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
+              size="sm"
               aria-expanded={sidebarOpen}
+              title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
               aria-label={sidebarOpen ? "Close project sidebar" : "Open project sidebar"}
               onClick={() => setSidebarOpen((open) => !open)}
+              className="gap-2"
             >
               {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
+              <span className="hidden sm:inline">Projects</span>
             </Button>
           </div>
           <h1 className="min-w-0 truncate text-center text-sm font-semibold tracking-tight text-foreground">
@@ -74,12 +80,15 @@ export function EditorShell({
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
+              size="sm"
               aria-expanded={aiSidebarOpen}
+              title={aiSidebarOpen ? "Close AI sidebar" : "Open AI sidebar"}
               aria-label={aiSidebarOpen ? "Close AI sidebar" : "Open AI sidebar"}
               onClick={() => setAiSidebarOpen((open) => !open)}
+              className="gap-2"
             >
               <Bot className="size-4" />
+              <span className="hidden sm:inline">AI</span>
             </Button>
             <UserButton
               appearance={{
