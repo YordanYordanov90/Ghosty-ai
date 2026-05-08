@@ -1,17 +1,19 @@
 "use client";
 
 import { UserButton } from "@clerk/nextjs";
-import { Bot, PanelLeftClose, PanelLeftOpen, Share } from "lucide-react";
-import { useState } from "react";
+import { Bot, LayoutTemplate, PanelLeftClose, PanelLeftOpen, Share } from "lucide-react";
+import { useRef, useState } from "react";
 
 import { WorkspaceCanvas } from "@/components/editor/canvas/workspace-canvas";
 import { ProjectDialogs } from "@/components/editor/project-dialogs";
 import { ShareDialog } from "@/components/editor/share-dialog";
 import { ProjectSidebar } from "@/components/editor/project-sidebar";
+import { StarterTemplatesModal } from "@/components/editor/starter-templates-modal";
 import { Button } from "@/components/ui/button";
 import { clerkAppearance } from "@/lib/clerk-appearance";
 import { useEditorProjectActions } from "@/hooks/use-editor-project-actions";
 import { useShareDialog } from "@/hooks/use-share-dialog";
+import type { WorkspaceCanvasHandle } from "@/components/editor/canvas/workspace-canvas";
 import type { EditorProject } from "@/types/editor-project";
 
 interface WorkspaceLayoutProps {
@@ -29,6 +31,8 @@ export function WorkspaceLayout({
 }: WorkspaceLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [aiSidebarOpen, setAiSidebarOpen] = useState(false);
+  const [starterOpen, setStarterOpen] = useState(false);
+  const canvasRef = useRef<WorkspaceCanvasHandle | null>(null);
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
   const toggleAiSidebar = () => setAiSidebarOpen(!aiSidebarOpen);
@@ -49,18 +53,21 @@ export function WorkspaceLayout({
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
+              size="sm"
               aria-expanded={sidebarOpen}
+              title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
               aria-label={
                 sidebarOpen ? "Close project sidebar" : "Open project sidebar"
               }
               onClick={toggleSidebar}
+              className="gap-2"
             >
               {sidebarOpen ? (
                 <PanelLeftClose className="size-4" />
               ) : (
                 <PanelLeftOpen className="size-4" />
               )}
+              <span className="hidden sm:inline">Projects</span>
             </Button>
           </div>
 
@@ -72,23 +79,41 @@ export function WorkspaceLayout({
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
-              aria-label="Share project"
-              onClick={() => share.setOpen(true)}
+              size="sm"
+              title="Starter templates"
+              aria-label="Open starter templates"
+              onClick={() => setStarterOpen(true)}
+              className="gap-2"
             >
-              <Share className="size-4" />
+              <LayoutTemplate className="size-4" />
+              <span className="hidden sm:inline">Templates</span>
             </Button>
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
+              size="sm"
+              title="Share"
+              aria-label="Share project"
+              onClick={() => share.setOpen(true)}
+              className="gap-2"
+            >
+              <Share className="size-4" />
+              <span className="hidden sm:inline">Share</span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
               aria-expanded={aiSidebarOpen}
+              title={aiSidebarOpen ? "Close AI sidebar" : "Open AI sidebar"}
               aria-label={
                 aiSidebarOpen ? "Close AI sidebar" : "Open AI sidebar"
               }
               onClick={toggleAiSidebar}
+              className="gap-2"
             >
               <Bot className="size-4" />
+              <span className="hidden sm:inline">AI</span>
             </Button>
             <UserButton
               appearance={{
@@ -110,6 +135,13 @@ export function WorkspaceLayout({
       <div className="flex min-h-dvh pt-14">
         <ProjectDialogs {...projectActions} />
         <ShareDialog share={share} />
+        <StarterTemplatesModal
+          open={starterOpen}
+          onOpenChange={setStarterOpen}
+          onImport={(template) => {
+            canvasRef.current?.importTemplate(template);
+          }}
+        />
 
         <ProjectSidebar
           isOpen={sidebarOpen}
@@ -130,7 +162,7 @@ export function WorkspaceLayout({
           </div>
 
           <div className="relative z-10 min-h-[calc(100dvh-3.5rem)] flex-1">
-            <WorkspaceCanvas roomId={projectId} />
+            <WorkspaceCanvas ref={canvasRef} roomId={projectId} />
           </div>
         </div>
 

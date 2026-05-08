@@ -1,18 +1,26 @@
 "use client"
 
-import type { Dispatch, SetStateAction } from "react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { Dispatch, Ref, SetStateAction } from "react"
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import {
   Background,
   BackgroundVariant,
   ConnectionMode,
   Handle,
-  MiniMap,
   MarkerType,
   NodeResizer,
   Position,
   ReactFlowProvider,
   ReactFlow,
+  type EdgeChange,
   type NodeChange,
   type NodeProps,
   type OnConnect,
@@ -25,22 +33,44 @@ import {
   ClientSideSuspense,
   LiveblocksProvider,
   RoomProvider,
+  useCanRedo,
+  useCanUndo,
+  useRedo,
+  useUndo,
 } from "@liveblocks/react/suspense"
 import { ErrorBoundary } from "react-error-boundary"
-import { Circle, Diamond, Hexagon, Pill, RectangleHorizontal, Database } from "lucide-react"
+import {
+  Circle,
+  Diamond,
+  Hexagon,
+  Pill,
+  RectangleHorizontal,
+  Database,
+  Minus,
+  Plus,
+  Scan,
+  Undo2,
+  Redo2,
+} from "lucide-react"
 
 import type { CanvasEdge, CanvasNode, CanvasNodeColorPair } from "@/types/canvas"
 import { DEFAULT_NODE_COLOR_PAIR, NODE_COLORS } from "@/types/canvas"
 import { CanvasShapeVisual } from "@/components/editor/canvas/canvas-shape-visual"
 import { CanvasEdgeRenderer } from "@/components/editor/canvas/canvas-edge"
+import type { CanvasTemplate } from "@/components/editor/starter-templates"
 import { cn } from "@/lib/utils"
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 
 import "@xyflow/react/dist/style.css"
 import "@liveblocks/react-ui/styles.css"
 import "@liveblocks/react-flow/styles.css"
 
-interface WorkspaceCanvasProps {
+export interface WorkspaceCanvasProps {
   roomId: string
+}
+
+export interface WorkspaceCanvasHandle {
+  importTemplate: (template: CanvasTemplate) => void
 }
 
 const MIN_NODE_SIZE = { width: 120, height: 72 }
@@ -440,7 +470,7 @@ function CanvasNodeRenderer({
   )
 }
 
-function CanvasFlow() {
+function CanvasFlow({ canvasHandleRef }: { canvasHandleRef: Ref<WorkspaceCanvasHandle> }) {
   const rf = useReactFlow<CanvasNode, CanvasEdge>()
   const idCounterRef = useRef(0)
   const dragImageRef = useRef<HTMLImageElement | null>(null)
@@ -450,6 +480,17 @@ function CanvasFlow() {
   const [dragPreview, setDragPreview] = useState<
     null | { payload: ShapePayload; x: number; y: number }
   >(null)
+
+  const undo = useUndo()
+  const redo = useRedo()
+  const canUndo = useCanUndo()
+  const canRedo = useCanRedo()
+
+  useKeyboardShortcuts({
+    reactFlow: rf,
+    undo,
+    redo,
+  })
 
   const {
     nodes,
@@ -462,6 +503,41 @@ function CanvasFlow() {
     nodes: { initial: [] },
     edges: { initial: [] },
   })
+
+  const importTemplate = useCallback(
+    (template: CanvasTemplate) => {
+      setEditingNodeId(null)
+      setResizingNodeId(null)
+      setEditingEdgeId(null)
+
+      if (edges.length) {
+        onEdgesChange(edges.map((edge) => ({ type: "remove", id: edge.id } satisfies EdgeChange<CanvasEdge>)))
+      }
+      if (nodes.length) {
+        onNodesChange(nodes.map((node) => ({ type: "remove", id: node.id } satisfies NodeChange<CanvasNode>)))
+      }
+
+      if (template.nodes.length) {
+        onNodesChange(template.nodes.map((item) => ({ type: "add", item } satisfies NodeChange<CanvasNode>)))
+      }
+      if (template.edges.length) {
+        onEdgesChange(template.edges.map((item) => ({ type: "add", item } satisfies EdgeChange<CanvasEdge>)))
+      }
+
+      window.requestAnimationFrame(() => {
+        rf.fitView({ duration: 220, padding: 0.2 })
+      })
+    },
+    [edges, nodes, onEdgesChange, onNodesChange, rf],
+  )
+
+  useImperativeHandle(
+    canvasHandleRef,
+    () => ({
+      importTemplate,
+    }),
+    [importTemplate],
+  )
 
   const commitEdgeLabel = useMutation(
     ({ storage }, edgeId: string, label: string) => {
@@ -707,9 +783,76 @@ function CanvasFlow() {
         edgesFocusable={!editingEdgeId}
         panOnScroll={!editingEdgeId}
       >
-        <MiniMap pannable zoomable />
         <Background variant={BackgroundVariant.Dots} gap={18} size={1.25} />
       </ReactFlow>
+
+      <div className="pointer-events-auto absolute bottom-5 left-5 z-10">
+        <div className="flex items-center gap-1.5 rounded-full border border-border/70 bg-background/70 px-2 py-2 shadow-[0_10px_30px_-18px_rgba(0,0,0,0.7)] backdrop-blur-md">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              aria-label="Zoom out"
+              title="Zoom out"
+              onClick={() => rf.zoomOut({ duration: 160 })}
+              className="inline-flex size-10 items-center justify-center rounded-full border border-border/60 bg-elevated/40 text-foreground/90 transition hover:bg-elevated/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+            >
+              <Minus className="size-4.5" aria-hidden />
+            </button>
+            <button
+              type="button"
+              aria-label="Fit view"
+              title="Fit view"
+              onClick={() => rf.fitView({ duration: 220 })}
+              className="inline-flex size-10 items-center justify-center rounded-full border border-border/60 bg-elevated/40 text-foreground/90 transition hover:bg-elevated/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+            >
+              <Scan className="size-4.5" aria-hidden />
+            </button>
+            <button
+              type="button"
+              aria-label="Zoom in"
+              title="Zoom in"
+              onClick={() => rf.zoomIn({ duration: 160 })}
+              className="inline-flex size-10 items-center justify-center rounded-full border border-border/60 bg-elevated/40 text-foreground/90 transition hover:bg-elevated/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+            >
+              <Plus className="size-4.5" aria-hidden />
+            </button>
+          </div>
+
+          <div aria-hidden className="mx-1 h-6 w-px bg-border/60" />
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              aria-label="Undo"
+              title="Undo"
+              onClick={undo}
+              disabled={!canUndo}
+              className={cn(
+                "inline-flex size-10 items-center justify-center rounded-full border border-border/60 bg-elevated/40 text-foreground/90 transition",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50",
+                canUndo ? "hover:bg-elevated/60" : "opacity-45",
+              )}
+            >
+              <Undo2 className="size-4.5" aria-hidden />
+            </button>
+            <button
+              type="button"
+              aria-label="Redo"
+              title="Redo"
+              onClick={redo}
+              disabled={!canRedo}
+              className={cn(
+                "inline-flex size-10 items-center justify-center rounded-full border border-border/60 bg-elevated/40 text-foreground/90 transition",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50",
+                canRedo ? "hover:bg-elevated/60" : "opacity-45",
+              )}
+            >
+              <Redo2 className="size-4.5" aria-hidden />
+            </button>
+          </div>
+        </div>
+      </div>
+
       <ShapeToolbar
         getDragImageEl={() => dragImageRef.current}
         onDragPreviewChange={setDragPreview}
@@ -718,13 +861,13 @@ function CanvasFlow() {
   )
 }
 
-function CanvasInner() {
+const CanvasInner = forwardRef<WorkspaceCanvasHandle>(function CanvasInnerInner(_, ref) {
   return (
     <ReactFlowProvider>
-      <CanvasFlow />
+      <CanvasFlow canvasHandleRef={ref} />
     </ReactFlowProvider>
   )
-}
+})
 
 function CanvasLoading() {
   return (
@@ -746,7 +889,8 @@ function CanvasErrorFallback() {
   )
 }
 
-export function WorkspaceCanvas({ roomId }: WorkspaceCanvasProps) {
+export const WorkspaceCanvas = forwardRef<WorkspaceCanvasHandle, WorkspaceCanvasProps>(
+  function WorkspaceCanvasInner({ roomId }, ref) {
   const initialPresence = useMemo(
     () => ({ cursor: null, isThinking: false }),
     [],
@@ -757,11 +901,11 @@ export function WorkspaceCanvas({ roomId }: WorkspaceCanvasProps) {
       <RoomProvider id={roomId} initialPresence={initialPresence}>
         <ErrorBoundary fallback={<CanvasErrorFallback />}>
           <ClientSideSuspense fallback={<CanvasLoading />}>
-            <CanvasInner />
+            <CanvasInner ref={ref} />
           </ClientSideSuspense>
         </ErrorBoundary>
       </RoomProvider>
     </LiveblocksProvider>
   )
-}
+})
 
