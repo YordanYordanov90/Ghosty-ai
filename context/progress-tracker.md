@@ -29,16 +29,22 @@ L28:**Base canvas (11)** — Workspace remains server-side (`app/editor/[project
 
 **Shape panel (12)** — Added bottom-center floating pill toolbar in **`components/editor/canvas/workspace-canvas.tsx`** with draggable shape buttons (rectangle, diamond, circle, pill, cylinder, hexagon). Drag payload includes `{ shape, width, height }` via `dataTransfer`. Canvas wrapper handles `dragover` + `drop`: converts screen → flow coords, generates node id (`shape` + timestamp + counter), and adds new Liveblocks-synced node of type **`canvasNode`** with empty label, default color, and `shape` value. Added basic `canvasNode` renderer so nodes are visible (simple bordered rectangle with centered label). Types updated in **`types/canvas.ts`**. **`npm run build`** passes.
 
-**Not started yet (at a glance)** — Liveblocks + React Flow canvas; AI generation; spec export; sidebar row navigation to open a workspace (optional UX).
+**Node shape rendering (13)** — **`components/editor/canvas/canvas-shape-visual.tsx`**: rectangle / pill / circle use CSS fills + inset ring (`data.color`); diamond / hexagon / cylinder use **SVG** in a normalized **`viewBox`** with **`preserveAspectRatio="none"`** so shapes track node **`style.width` / `style.height`**. Borders stay subtle when idle (**`vectorEffect="non-scaling-stroke"`** on SVG) and emphasize selection via **`selected`** from **`NodeProps`**. Drag from the shape toolbar uses a **transparent `setDragImage`** plus **`fixed`** ghost overlay (**`CanvasShapeVisual`** `variant="ghost"`) following **`drag`** / **`dragend`**; drop/create path unchanged. New drops use default fill **`#1F1F1F`** ( **`context/ui-context.md`** neutral default ). **`npm run build`** passes.
+
+**Canvas connections (handles)** — **`components/editor/canvas/workspace-canvas.tsx`** **`CanvasNodeRenderer`** wraps each shape with **`Handle`** from **`@xyflow/react`** on **top / right / bottom / left**. **`@xyflow/react`** ships **`pointer-events: none`** on **`.react-flow__handle`** by default (handles otherwise felt broken vs node drag); overrides use **`!pointer-events-auto`** + a wrapper **`[&_.react-flow__handle]:pointer-events-auto`**. Each side stacks **target → source** at the **same** anchor (single visible dot, XYFlow snaps completions onto **target**). **`32×32`** transparent hit area, **`::before`** dot, **`cursor-crosshair`**, resting **`opacity ~0.48`**, **`connectionRadius={42}`**, **`ConnectionMode.Loose`**. **`useLiveblocksFlow`** **`onConnect`** unchanged.
+
+**Node editing (14)** — **`components/editor/canvas/workspace-canvas.tsx`** adds selected-node resize handles via **`NodeResizer`** (min size enforced) and inline label editing: double-click centered label area to edit in-place, textarea overlay stays centered with placeholder when empty, updates sync through Liveblocks Storage (`flow.nodes[id].data.label`) as user types, closes on blur or `Escape`, and editing disables drag/pan to prevent accidental canvas interactions.
+
+**Not started yet (at a glance)** — AI generation; spec export; sidebar row navigation to open a workspace (optional UX).
 
 ## Current Phase
 
-- **07-wire-editor-home** complete; canvas/Liveblocks still ahead.
+- **11–13** canvas foundation + shapes landed; feature work shifts to AI / export / deeper canvas UX.
 
 ## Current Goal
 
-- Implement canvas + Liveblocks using **`workspaceId`** from **`/editor/[projectId]`** as the room id.
-- Keep smoke-testing create / rename / delete against real **`DATABASE_URL`**.
+- Smoke-test Liveblocks canvas + shape drag/drop with real **`DATABASE_URL`** and Clerk identities.
+- Plan next vertical (AI co-pilot, spec export, or richer node editing) per product spec.
 
 ## Completed
 
@@ -54,6 +60,11 @@ L28:**Base canvas (11)** — Workspace remains server-side (`app/editor/[project
 - **10-liveblocks-setup** — `liveblocks.config.ts` typed Presence (`cursor`, `isThinking`), UserMeta (`name`, `avatar?`, `color`). Added cached Liveblocks node client + deterministic cursor color in `lib/liveblocks.ts`. Added `POST /api/liveblocks-auth` with Clerk auth + project access check + create-room-if-missing + session userInfo; accepts Liveblocks default `{ room }` payload (and `{ projectId }` for custom clients). Added `@liveblocks/node`.
 - **11-base-canvas** — `components/editor/canvas/workspace-canvas.tsx` wires `LiveblocksProvider` + `RoomProvider` + `ClientSideSuspense` + error fallback; React Flow uses `useLiveblocksFlow({ suspense: true })` with empty nodes/edges, `MiniMap`, dot background, loose connections, `fitView`. Added `ReactFlowProvider` to satisfy React Flow context. Added shared types `types/canvas.ts` (`canvasNode`, `canvasEdge`, node data: `label`, `color`, `shape`).
 - **12-shape-panel** — Added bottom-center draggable shape toolbar (rectangle/diamond/circle/pill/cylinder/hexagon) + drag payload `{ shape, width, height }` + drop handling (`screenToFlowPosition`) to create new `canvasNode` with id `${shape}-${timestamp}-${counter}`. Added basic node renderer and later shape-specific rendering + higher-contrast borders so shapes are visually distinct.
+- **13-node-shape** — Proper per-shape rendering (CSS vs SVG scaling), selection-aware borders, toolbar drag ghost preview; see **`context/feature-specs/13-node-shape.md`**.
+- **14-node-editing** — Selected-node resize handles (`NodeResizer`) + inline label editing (double-click to edit, sync to Liveblocks as user types, close on blur / `Escape`, disable drag/pan while editing); see **`context/feature-specs/14-node-editing.md`**.
+- **15-nodes-color-toolbar** — Selected nodes show a floating color toolbar with predefined fill+text pairs (`NODE_COLORS`); swatch selection updates both background + label text colors in Liveblocks storage (no server calls); hover glow uses paired text color; see **`context/feature-specs/15-nodes-color-toolbar.md`**.
+- **Canvas handles** — Four-sided **`Handle`** (target + source) on **`canvasNode`** so users can connect shapes with edges; Liveblocks-synced **`onConnect`** path.
+- **Edge behavior (16)** — Custom `canvasEdge` renderer: rounded right-angle routing (`getSmoothStepPath`), dim-at-rest + brighten on hover/selection, arrowheads, thicker invisible interaction stroke for easier hover/click, and inline label editing (double-click edge/label, save on blur/Enter/Escape) synced through Liveblocks edge data (`data.label`).
 
 ## In Progress
 
@@ -61,9 +72,6 @@ L28:**Base canvas (11)** — Workspace remains server-side (`app/editor/[project
 
 ## Next Up
 
-- Canvas + Liveblocks room keyed to **`projectId`** in the URL.
-- Wire client Liveblocks provider + room connect using `POST /api/liveblocks-auth` (presence cursor + `isThinking`).
-- Add custom node/edge rendering + controls (out of scope for 11).
 - Optional: add owner row/label in share dialog list if product wants explicit "owner" visibility.
 - Continue from feature spec checklist (imports, `cn()`, no default light bleed).
 
