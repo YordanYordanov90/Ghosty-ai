@@ -1,16 +1,16 @@
 "use client";
 
-import { UserButton } from "@clerk/nextjs";
-import { Bot, PanelLeftClose, PanelLeftOpen, Plus, Share, Sparkles } from "lucide-react";
+import { Bot, LayoutTemplate, Plus, Share, Sparkles } from "lucide-react";
 import { useState } from "react";
 
+import { AiWorkspaceSidebar } from "@/components/editor/ai-workspace-sidebar";
+import { EditorTopNav } from "@/components/editor/editor-top-nav";
 import { ProjectDialogs } from "@/components/editor/project-dialogs";
 import { ShareDialog } from "@/components/editor/share-dialog";
 import { ProjectSidebar } from "@/components/editor/project-sidebar";
 import { Button } from "@/components/ui/button";
 import { useEditorProjectActions } from "@/hooks/use-editor-project-actions";
 import { useShareDialog } from "@/hooks/use-share-dialog";
-import { clerkAppearance } from "@/lib/clerk-appearance";
 import type { EditorProject } from "@/types/editor-project";
 
 function EditorShellShareToolbar({ projectId }: { projectId: string }) {
@@ -27,8 +27,8 @@ function EditorShellShareToolbar({ projectId }: { projectId: string }) {
         onClick={() => share.setOpen(true)}
         className="gap-2"
       >
-        <Share className="size-4" />
-        <span className="hidden sm:inline">Share</span>
+        <Share className="size-4 shrink-0" />
+        <span>Share</span>
       </Button>
     </>
   );
@@ -55,56 +55,53 @@ export function EditorShell({
 
   return (
     <div className="min-h-dvh bg-background">
-      <header className="fixed inset-x-0 top-0 z-50 flex h-14 shrink-0 items-stretch border-b border-border/60 bg-background/75 backdrop-blur-md supports-backdrop-filter:bg-background/65">
-        <div className="grid h-full w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4">
-          <div className="flex items-center justify-start">
+      <EditorTopNav
+        sidebarOpen={sidebarOpen}
+        onSidebarToggle={() => setSidebarOpen((open) => !open)}
+        title={workspaceId ? "Project workspace" : "Editor"}
+        trailingActions={
+          <>
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              aria-expanded={sidebarOpen}
-              title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
-              aria-label={sidebarOpen ? "Close project sidebar" : "Open project sidebar"}
-              onClick={() => setSidebarOpen((open) => !open)}
-              className="gap-2"
+              disabled={!workspaceId}
+              title={
+                workspaceId
+                  ? undefined
+                  : "Open or create a project to import templates"
+              }
+              aria-label={
+                workspaceId
+                  ? "Open starter templates"
+                  : "Templates — open a project first"
+              }
+              className="gap-2 disabled:opacity-45"
             >
-              {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
-              <span className="hidden sm:inline">Projects</span>
+              <LayoutTemplate className="size-4 shrink-0" />
+              <span className="truncate">Templates</span>
             </Button>
-          </div>
-          <h1 className="min-w-0 truncate text-center text-sm font-semibold tracking-tight text-foreground">
-            {workspaceId ? "Project workspace" : "Editor"}
-          </h1>
-          <div className="flex items-center justify-end gap-1.5 sm:gap-2">
-            {workspaceId ? <EditorShellShareToolbar projectId={workspaceId} /> : null}
+            {workspaceId ? (
+              <EditorShellShareToolbar projectId={workspaceId} />
+            ) : null}
             <Button
               type="button"
               variant="ghost"
               size="sm"
               aria-expanded={aiSidebarOpen}
               title={aiSidebarOpen ? "Close AI sidebar" : "Open AI sidebar"}
-              aria-label={aiSidebarOpen ? "Close AI sidebar" : "Open AI sidebar"}
+              aria-label={
+                aiSidebarOpen ? "Close AI sidebar" : "Open AI sidebar"
+              }
               onClick={() => setAiSidebarOpen((open) => !open)}
               className="gap-2"
             >
-              <Bot className="size-4" />
-              <span className="hidden sm:inline">AI</span>
+              <Bot className="size-4 shrink-0" />
+              <span>AI</span>
             </Button>
-            <UserButton
-              appearance={{
-                ...clerkAppearance.userButton,
-                variables: clerkAppearance.variables,
-              }}
-              userProfileProps={{
-                appearance: {
-                  ...clerkAppearance.userProfile,
-                  variables: clerkAppearance.variables,
-                },
-              }}
-            />
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
       <ProjectSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -182,24 +179,10 @@ export function EditorShell({
           </div>
         </div>
 
-        {aiSidebarOpen && (
-          <aside className="flex w-80 shrink-0 flex-col border-l border-border-default bg-surface shadow-[inset_1px_0_0_0_color-mix(in_oklab,var(--border-default)_80%,transparent)]">
-            <div className="shrink-0 border-b border-border/60 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                AI assistant
-              </p>
-              <p className="mt-1 text-sm font-medium tracking-tight text-foreground">
-                Co-pilot
-              </p>
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto p-4">
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                Prompt graph, refine nodes, and export specs. This panel will host
-                chat and context for canvas.
-              </p>
-            </div>
-          </aside>
-        )}
+        <AiWorkspaceSidebar
+          open={aiSidebarOpen}
+          onClose={() => setAiSidebarOpen(false)}
+        />
       </main>
     </div>
   );
