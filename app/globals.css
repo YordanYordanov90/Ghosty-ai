@@ -119,6 +119,12 @@
   --color-brand-dim: var(--accent-primary-dim);
   --color-ai: var(--accent-ai);
   --color-ai-text: var(--accent-ai-text);
+  /* Semantic aliases (ui-context / feature specs) */
+  --color-primary-text: var(--text-primary);
+  --color-muted-text: var(--text-muted);
+  --color-copy-primary: var(--text-primary);
+  --color-surface-border: var(--border-default);
+  --color-accent-text: var(--accent-ai-text);
   --color-profit: var(--state-profit);
   --color-loss: var(--state-loss);
   --color-error: var(--state-error);

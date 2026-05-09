@@ -23,6 +23,8 @@
 # misc
 .DS_Store
 *.pem
+# Windows reserved name — accidental `nul` file breaks `git add` on Windows
+/nul
 
 # debug
 npm-debug.log*

@@ -79,7 +79,7 @@ export function CanvasShapeVisual({
       <div
         className={cn(
           "pointer-events-none flex h-full w-full items-center justify-center rounded-md px-3",
-          isGhost && "pointer-events-auto opacity-55 drop-shadow-md",
+          isGhost && "opacity-55 drop-shadow-md",
           className,
         )}
         style={{
@@ -99,7 +99,7 @@ export function CanvasShapeVisual({
       <div
         className={cn(
           "pointer-events-none flex h-full w-full items-center justify-center rounded-full px-3",
-          isGhost && "pointer-events-auto opacity-55 drop-shadow-md",
+          isGhost && "opacity-55 drop-shadow-md",
           className,
         )}
         style={{
@@ -119,7 +119,7 @@ export function CanvasShapeVisual({
       <div
         className={cn(
           "pointer-events-none flex h-full w-full items-center justify-center rounded-full px-3",
-          isGhost && "pointer-events-auto opacity-55 drop-shadow-md",
+          isGhost && "opacity-55 drop-shadow-md",
           className,
         )}
         style={{

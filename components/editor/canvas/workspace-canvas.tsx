@@ -1,6 +1,11 @@
-"use client"
+"use client";
 
-import type { Dispatch, Ref, SetStateAction } from "react"
+import type {
+  Dispatch,
+  MouseEvent as ReactMouseEvent,
+  Ref,
+  SetStateAction,
+} from "react";
 import {
   forwardRef,
   useCallback,
@@ -9,7 +14,8 @@ import {
   useMemo,
   useRef,
   useState,
-} from "react"
+} from "react";
+import { useAuth } from "@clerk/nextjs";
 import {
   Background,
   BackgroundVariant,
@@ -26,9 +32,9 @@ import {
   type OnConnect,
   type EdgeProps,
   useReactFlow,
-} from "@xyflow/react"
-import { useMutation } from "@liveblocks/react"
-import { useLiveblocksFlow } from "@liveblocks/react-flow"
+} from "@xyflow/react";
+import { useMutation, useOthers, useUpdateMyPresence } from "@liveblocks/react";
+import { useLiveblocksFlow } from "@liveblocks/react-flow";
 import {
   ClientSideSuspense,
   LiveblocksProvider,
@@ -37,8 +43,8 @@ import {
   useCanUndo,
   useRedo,
   useUndo,
-} from "@liveblocks/react/suspense"
-import { ErrorBoundary } from "react-error-boundary"
+} from "@liveblocks/react/suspense";
+import { ErrorBoundary } from "react-error-boundary";
 import {
   Circle,
   Diamond,
@@ -51,46 +57,185 @@ import {
   Scan,
   Undo2,
   Redo2,
-} from "lucide-react"
+} from "lucide-react";
 
-import type { CanvasEdge, CanvasNode, CanvasNodeColorPair } from "@/types/canvas"
-import { DEFAULT_NODE_COLOR_PAIR, NODE_COLORS } from "@/types/canvas"
-import { CanvasShapeVisual } from "@/components/editor/canvas/canvas-shape-visual"
-import { CanvasEdgeRenderer } from "@/components/editor/canvas/canvas-edge"
-import type { CanvasTemplate } from "@/components/editor/starter-templates"
-import { cn } from "@/lib/utils"
-import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
+import type {
+  CanvasEdge,
+  CanvasNode,
+  CanvasNodeColorPair,
+} from "@/types/canvas";
+import { DEFAULT_NODE_COLOR_PAIR, NODE_COLORS } from "@/types/canvas";
+import { CanvasShapeVisual } from "@/components/editor/canvas/canvas-shape-visual";
+import { CanvasEdgeRenderer } from "@/components/editor/canvas/canvas-edge";
+import type { CanvasTemplate } from "@/components/editor/starter-templates";
+import { cn } from "@/lib/utils";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useCanvasAutosave } from "@/hooks/use-canvas-autosave";
+import type { SaveStatus } from "@/hooks/use-canvas-autosave";
 
-import "@xyflow/react/dist/style.css"
-import "@liveblocks/react-ui/styles.css"
-import "@liveblocks/react-flow/styles.css"
+import "@xyflow/react/dist/style.css";
+import "@liveblocks/react-ui/styles.css";
+import "@liveblocks/react-flow/styles.css";
+import Image from "next/image";
 
 export interface WorkspaceCanvasProps {
-  roomId: string
+  roomId: string;
+  onSaveStatusChange?: (status: SaveStatus) => void;
 }
 
 export interface WorkspaceCanvasHandle {
-  importTemplate: (template: CanvasTemplate) => void
+  importTemplate: (template: CanvasTemplate) => void;
 }
 
-const MIN_NODE_SIZE = { width: 120, height: 72 }
+const MIN_NODE_SIZE = { width: 120, height: 72 };
 
 const EMPTY_DRAG_IMG_SRC =
-  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
-const SHAPE_DND_MIME = "application/x-ghosty-shape"
+  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+const SHAPE_DND_MIME = "application/x-ghosty-shape";
 
-type ShapeName = CanvasNode["data"]["shape"]
-type ShapePayload = {
-  shape: ShapeName
-  width: number
-  height: number
+function getInitials(name: string) {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const first = words[0]?.[0] ?? "";
+  const last = words.length > 1 ? (words[words.length - 1]?.[0] ?? "") : "";
+  return (first + last).toUpperCase() || "?";
 }
 
+function PresenceAvatarGroup() {
+  const { userId } = useAuth();
+  const others = useOthers();
+
+  const collaborators = useMemo(() => {
+    if (!userId) return [];
+    return others.filter((other) => other.id !== userId);
+  }, [others, userId]);
+
+  if (!userId) return null;
+
+  const visible = collaborators.slice(0, 5);
+  const overflow = Math.max(0, collaborators.length - visible.length);
+
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="pointer-events-auto absolute right-5 top-5 z-20 flex items-center rounded-full border border-border/60 bg-background/70 px-2 py-2 shadow-[0_10px_30px_-18px_rgba(0,0,0,0.7)] backdrop-blur-md">
+      <div className="flex items-center">
+        <div className="flex items-center">
+          {visible.map((other, idx) => {
+            const name = other.info?.name ?? "User";
+            const avatar = other.info?.avatar;
+            return (
+              <div
+                key={other.connectionId}
+                className="pointer-events-none relative"
+                style={{ marginLeft: idx === 0 ? 0 : -10 }}
+                aria-hidden
+              >
+                <div className="grid size-8 place-items-center overflow-hidden rounded-full bg-elevated text-[11px] font-semibold text-foreground ring-2 ring-background/70">
+                  {avatar ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={avatar}
+                      alt=""
+                      className="h-full w-full object-cover"
+                      draggable={false}
+                    />
+                  ) : (
+                    <span>{getInitials(name)}</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {overflow > 0 ? (
+          <div className="pointer-events-none relative ml-2" aria-hidden>
+            <div className="grid h-8 min-w-8 place-items-center rounded-full border border-border/70 bg-elevated/70 px-2 text-[11px] font-semibold text-foreground ring-2 ring-background/70">
+              +{overflow}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function PresenceCursors() {
+  const { userId } = useAuth();
+  const others = useOthers();
+
+  const cursors = useMemo(() => {
+    if (!userId) return [];
+    const filtered = others.filter((o) => o.id !== userId);
+    return filtered
+      .map((o) => ({
+        key: o.connectionId,
+        name: o.info?.name ?? "User",
+        color: o.info?.color ?? "#00c8d4",
+        cursor: o.presence?.cursor ?? null,
+      }))
+      .filter((o) => o.cursor !== null);
+  }, [others, userId]);
+
+  if (!userId) return null;
+
+  if (cursors.length === 0) return null;
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20">
+      {cursors.map((c) => {
+        const cursor = c.cursor!;
+        return (
+          <div
+            key={c.key}
+            className="absolute"
+            style={{
+              left: cursor.x,
+              top: cursor.y,
+              transform: "translate(-2px, -2px)",
+            }}
+          >
+            <div className="relative">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                aria-hidden
+                className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]"
+              >
+                <path
+                  d="M2 1.5L12.2 7.2L7.6 8.2L6 12.5L2 1.5Z"
+                  fill={c.color}
+                  stroke="rgba(0,0,0,0.35)"
+                  strokeWidth="0.7"
+                />
+              </svg>
+              <div
+                className="absolute left-3 top-3 max-w-14 truncate rounded-full px-2 py-1 text-[11px] font-medium text-background shadow-[0_10px_30px_-18px_rgba(0,0,0,0.7)]"
+                style={{ backgroundColor: c.color }}
+              >
+                {c.name}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+type ShapeName = CanvasNode["data"]["shape"];
+type ShapePayload = {
+  shape: ShapeName;
+  width: number;
+  height: number;
+};
+
 const SHAPES: Array<{
-  shape: ShapeName
-  label: string
-  Icon: typeof RectangleHorizontal
-  size: { width: number; height: number }
+  shape: ShapeName;
+  label: string;
+  Icon: typeof RectangleHorizontal;
+  size: { width: number; height: number };
 }> = [
   {
     shape: "rectangle",
@@ -128,46 +273,49 @@ const SHAPES: Array<{
     Icon: Hexagon,
     size: { width: 220, height: 140 },
   },
-]
+];
 
 interface ShapeToolbarProps {
-  getDragImageEl: () => HTMLImageElement | null
+  getDragImageEl: () => HTMLImageElement | null;
   onDragPreviewChange: Dispatch<
     SetStateAction<null | { payload: ShapePayload; x: number; y: number }>
-  >
+  >;
 }
 
-function ShapeToolbar({ getDragImageEl, onDragPreviewChange }: ShapeToolbarProps) {
+function ShapeToolbar({
+  getDragImageEl,
+  onDragPreviewChange,
+}: ShapeToolbarProps) {
   const onDragStart = useCallback(
     (e: React.DragEvent<HTMLButtonElement>, payload: ShapePayload) => {
-      const dragImg = getDragImageEl()
+      const dragImg = getDragImageEl();
       if (dragImg) {
-        e.dataTransfer.setDragImage(dragImg, 0, 0)
+        e.dataTransfer.setDragImage(dragImg, 0, 0);
       }
-      e.dataTransfer.setData(SHAPE_DND_MIME, JSON.stringify(payload))
-      e.dataTransfer.setData("text/plain", JSON.stringify(payload))
-      e.dataTransfer.effectAllowed = "copy"
+      e.dataTransfer.setData(SHAPE_DND_MIME, JSON.stringify(payload));
+      e.dataTransfer.setData("text/plain", JSON.stringify(payload));
+      e.dataTransfer.effectAllowed = "copy";
       onDragPreviewChange({
         payload,
         x: e.clientX,
         y: e.clientY,
-      })
+      });
     },
     [getDragImageEl, onDragPreviewChange],
-  )
+  );
 
   const onDrag = useCallback(
     (e: React.DragEvent<HTMLButtonElement>) => {
       onDragPreviewChange((prev) =>
         prev ? { ...prev, x: e.clientX, y: e.clientY } : prev,
-      )
+      );
     },
     [onDragPreviewChange],
-  )
+  );
 
   const onDragEnd = useCallback(() => {
-    onDragPreviewChange(null)
-  }, [onDragPreviewChange])
+    onDragPreviewChange(null);
+  }, [onDragPreviewChange]);
 
   return (
     <div className="pointer-events-auto absolute bottom-5 left-1/2 z-10 -translate-x-1/2">
@@ -191,7 +339,7 @@ function ShapeToolbar({ getDragImageEl, onDragPreviewChange }: ShapeToolbarProps
         ))}
       </div>
     </div>
-  )
+  );
 }
 
 /**
@@ -211,49 +359,92 @@ function CanvasNodeHandles({ selected }: { selected: boolean }) {
     "!pointer-events-auto cursor-crosshair",
     "transition-opacity duration-150 ease-out",
     selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-  )
+  );
 
   return (
     <>
-      <Handle type="target" position={Position.Top} id="top-t" className={cls} />
-      <Handle type="source" position={Position.Top} id="top-s" className={cls} />
-      <Handle type="target" position={Position.Bottom} id="bottom-t" className={cls} />
-      <Handle type="source" position={Position.Bottom} id="bottom-s" className={cls} />
-      <Handle type="target" position={Position.Left} id="left-t" className={cls} />
-      <Handle type="source" position={Position.Left} id="left-s" className={cls} />
-      <Handle type="target" position={Position.Right} id="right-t" className={cls} />
-      <Handle type="source" position={Position.Right} id="right-s" className={cls} />
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="top-t"
+        className={cls}
+      />
+      <Handle
+        type="source"
+        position={Position.Top}
+        id="top-s"
+        className={cls}
+      />
+      <Handle
+        type="target"
+        position={Position.Bottom}
+        id="bottom-t"
+        className={cls}
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="bottom-s"
+        className={cls}
+      />
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="left-t"
+        className={cls}
+      />
+      <Handle
+        type="source"
+        position={Position.Left}
+        id="left-s"
+        className={cls}
+      />
+      <Handle
+        type="target"
+        position={Position.Right}
+        id="right-t"
+        className={cls}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="right-s"
+        className={cls}
+      />
     </>
-  )
+  );
 }
 
 function getNodeTextColor(data: CanvasNode["data"]) {
-  if (typeof data.textColor === "string" && data.textColor.trim()) return data.textColor
-  const match = NODE_COLORS.find((pair) => pair.fill.toLowerCase() === data.color.toLowerCase())
-  return match?.text ?? DEFAULT_NODE_COLOR_PAIR.text
+  if (typeof data.textColor === "string" && data.textColor.trim())
+    return data.textColor;
+  const match = NODE_COLORS.find(
+    (pair) => pair.fill.toLowerCase() === data.color.toLowerCase(),
+  );
+  return match?.text ?? DEFAULT_NODE_COLOR_PAIR.text;
 }
 
 function getMinSizeForShape(shape: CanvasNode["data"]["shape"]) {
   switch (shape) {
     case "circle":
-      return { width: 120, height: 120 }
+      return { width: 120, height: 120 };
     case "cylinder":
-      return { width: 150, height: 96 }
+      return { width: 150, height: 96 };
     case "diamond":
-      return { width: 140, height: 92 }
+      return { width: 140, height: 92 };
     case "pill":
-      return { width: 150, height: 72 }
+      return { width: 150, height: 72 };
     case "hexagon":
-      return { width: 150, height: 92 }
+      return { width: 150, height: 92 };
     case "rectangle":
     default:
-      return MIN_NODE_SIZE
+      return MIN_NODE_SIZE;
   }
 }
 
 interface NodeColorToolbarProps {
-  active: CanvasNodeColorPair
-  onSelect: (pair: CanvasNodeColorPair) => void
+  active: CanvasNodeColorPair;
+  onSelect: (pair: CanvasNodeColorPair) => void;
 }
 
 function NodeColorToolbar({ active, onSelect }: NodeColorToolbarProps) {
@@ -265,19 +456,19 @@ function NodeColorToolbar({ active, onSelect }: NodeColorToolbarProps) {
         "transition-transform duration-150 ease-out",
       )}
       onPointerDown={(e) => {
-        e.preventDefault()
-        e.stopPropagation()
+        e.preventDefault();
+        e.stopPropagation();
       }}
       onDoubleClick={(e) => {
-        e.preventDefault()
-        e.stopPropagation()
+        e.preventDefault();
+        e.stopPropagation();
       }}
     >
       <div className="flex items-center gap-1.5 rounded-full border border-border/70 bg-background/70 px-2 py-2 shadow-[0_10px_30px_-18px_rgba(0,0,0,0.7)] backdrop-blur-md">
         {NODE_COLORS.map((pair) => {
           const isActive =
             pair.fill.toLowerCase() === active.fill.toLowerCase() &&
-            pair.text.toLowerCase() === active.text.toLowerCase()
+            pair.text.toLowerCase() === active.text.toLowerCase();
 
           return (
             <button
@@ -286,9 +477,9 @@ function NodeColorToolbar({ active, onSelect }: NodeColorToolbarProps) {
               aria-label="Set node color"
               title="Set node color"
               onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                onSelect(pair)
+                e.preventDefault();
+                e.stopPropagation();
+                onSelect(pair);
               }}
               className={cn(
                 "relative inline-flex size-7 items-center justify-center rounded-full border transition",
@@ -331,20 +522,20 @@ function NodeColorToolbar({ active, onSelect }: NodeColorToolbarProps) {
                 }}
               />
             </button>
-          )
+          );
         })}
       </div>
     </div>
-  )
+  );
 }
 
 interface CanvasNodeRendererProps extends NodeProps<CanvasNode> {
-  editingNodeId: string | null
-  resizingNodeId: string | null
-  setResizingNodeId: Dispatch<SetStateAction<string | null>>
-  setEditingNodeId: Dispatch<SetStateAction<string | null>>
-  updateNodeLabel: (id: string, label: string) => void
-  updateNodeColors: (id: string, pair: CanvasNodeColorPair) => void
+  editingNodeId: string | null;
+  resizingNodeId: string | null;
+  setResizingNodeId: Dispatch<SetStateAction<string | null>>;
+  setEditingNodeId: Dispatch<SetStateAction<string | null>>;
+  updateNodeLabel: (id: string, label: string) => void;
+  updateNodeColors: (id: string, pair: CanvasNodeColorPair) => void;
 }
 
 function CanvasNodeRenderer({
@@ -358,32 +549,35 @@ function CanvasNodeRenderer({
   updateNodeLabel,
   updateNodeColors,
 }: CanvasNodeRendererProps) {
-  const isEditing = editingNodeId === id
-  const isResizing = resizingNodeId === id
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const textColor = getNodeTextColor(data)
+  const isEditing = editingNodeId === id;
+  const isResizing = resizingNodeId === id;
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const textColor = getNodeTextColor(data);
   const activeColorPair = useMemo<CanvasNodeColorPair>(() => {
-    const fill = typeof data.color === "string" && data.color.trim() ? data.color : DEFAULT_NODE_COLOR_PAIR.fill
-    return { fill, text: textColor }
-  }, [data.color, textColor])
-  const minSize = useMemo(() => getMinSizeForShape(data.shape), [data.shape])
+    const fill =
+      typeof data.color === "string" && data.color.trim()
+        ? data.color
+        : DEFAULT_NODE_COLOR_PAIR.fill;
+    return { fill, text: textColor };
+  }, [data.color, textColor]);
+  const minSize = useMemo(() => getMinSizeForShape(data.shape), [data.shape]);
 
   useEffect(() => {
-    if (!isEditing) return
-    const el = textareaRef.current
-    if (!el) return
-    el.focus()
-    el.select()
-  }, [isEditing])
+    if (!isEditing) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [isEditing]);
 
   const onStartEditing = useCallback(
     (e: React.MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      setEditingNodeId(id)
+      e.preventDefault();
+      e.stopPropagation();
+      setEditingNodeId(id);
     },
     [id, setEditingNodeId],
-  )
+  );
 
   return (
     <div className="group relative h-full w-full overflow-visible [&_.react-flow__handle]:pointer-events-auto">
@@ -432,15 +626,15 @@ function CanvasNodeRenderer({
             onBlur={() => setEditingNodeId(null)}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
-                e.preventDefault()
-                e.stopPropagation()
-                setEditingNodeId(null)
+                e.preventDefault();
+                e.stopPropagation();
+                setEditingNodeId(null);
               }
             }}
             onDoubleClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
+              e.preventDefault();
+              e.stopPropagation();
             }}
             rows={1}
             className={cn(
@@ -467,69 +661,185 @@ function CanvasNodeRenderer({
       {/* hide connection handles while resizing so resize is easier */}
       {!isResizing ? <CanvasNodeHandles selected={selected} /> : null}
     </div>
-  )
+  );
 }
 
-function CanvasFlow({ canvasHandleRef }: { canvasHandleRef: Ref<WorkspaceCanvasHandle> }) {
-  const rf = useReactFlow<CanvasNode, CanvasEdge>()
-  const idCounterRef = useRef(0)
-  const dragImageRef = useRef<HTMLImageElement | null>(null)
-  const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
-  const [resizingNodeId, setResizingNodeId] = useState<string | null>(null)
-  const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null)
-  const [dragPreview, setDragPreview] = useState<
-    null | { payload: ShapePayload; x: number; y: number }
-  >(null)
+function CanvasFlow({
+  canvasHandleRef,
+  roomId,
+  onSaveStatusChange,
+}: {
+  canvasHandleRef: Ref<WorkspaceCanvasHandle>;
+  roomId: string;
+  onSaveStatusChange?: (status: SaveStatus) => void;
+}) {
+  const rf = useReactFlow<CanvasNode, CanvasEdge>();
+  const idCounterRef = useRef(0);
+  const dragImageRef = useRef<HTMLImageElement | null>(null);
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [resizingNodeId, setResizingNodeId] = useState<string | null>(null);
+  const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
+  const [dragPreview, setDragPreview] = useState<null | {
+    payload: ShapePayload;
+    x: number;
+    y: number;
+  }>(null);
 
-  const undo = useUndo()
-  const redo = useRedo()
-  const canUndo = useCanUndo()
-  const canRedo = useCanRedo()
+  const updateMyPresence = useUpdateMyPresence();
+  const moveRafRef = useRef<number | null>(null);
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+
+  const onMouseMove = useCallback(
+    (e: ReactMouseEvent) => {
+      const target = e.currentTarget as HTMLElement;
+      const rect = target.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      lastPointRef.current = { x, y };
+
+      if (moveRafRef.current !== null) return;
+      moveRafRef.current = window.requestAnimationFrame(() => {
+        moveRafRef.current = null;
+        const point = lastPointRef.current;
+        if (!point) return;
+        updateMyPresence({ cursor: point });
+      });
+    },
+    [updateMyPresence],
+  );
+
+  const onMouseLeave = useCallback(() => {
+    lastPointRef.current = null;
+    if (moveRafRef.current !== null) {
+      window.cancelAnimationFrame(moveRafRef.current);
+      moveRafRef.current = null;
+    }
+    updateMyPresence({ cursor: null });
+  }, [updateMyPresence]);
+
+  const undo = useUndo();
+  const redo = useRedo();
+  const canUndo = useCanUndo();
+  const canRedo = useCanRedo();
 
   useKeyboardShortcuts({
     reactFlow: rf,
     undo,
     redo,
-  })
+  });
 
-  const {
+  const { nodes, edges, onNodesChange, onEdgesChange, onDelete } =
+    useLiveblocksFlow<CanvasNode, CanvasEdge>({
+      suspense: true,
+      nodes: { initial: [] },
+      edges: { initial: [] },
+    });
+
+  // ── Autosave ────────────────────────────────────────────────────────────────
+  // Debounce canvas saves to Vercel Blob at 1500ms after the last change.
+  useCanvasAutosave({
     nodes,
     edges,
-    onNodesChange,
-    onEdgesChange,
-    onDelete,
-  } = useLiveblocksFlow<CanvasNode, CanvasEdge>({
-    suspense: true,
-    nodes: { initial: [] },
-    edges: { initial: [] },
-  })
+    projectId: roomId,
+    onStatusChange: onSaveStatusChange,
+  });
+
+  // ── Load saved canvas on first mount ────────────────────────────────────────
+  // This component is inside ClientSideSuspense — Liveblocks has already loaded
+  // storage by the time it renders. If the room is empty (no nodes or edges)
+  // we attempt to restore the last autosaved blob. If the room has data, we
+  // skip the load entirely to protect active collaboration.
+  const initialLoadDoneRef = useRef(false);
+  useEffect(() => {
+    if (initialLoadDoneRef.current) return;
+    initialLoadDoneRef.current = true;
+
+    // Room already has data — do not overwrite collaborative state
+    if (nodes.length > 0 || edges.length > 0) return;
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/projects/${roomId}/canvas`);
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          nodes?: CanvasNode[];
+          edges?: CanvasEdge[];
+        };
+        if (data.nodes?.length) {
+          onNodesChange(
+            data.nodes.map((item) => ({ type: "add" as const, item })),
+          );
+        }
+        if (data.edges?.length) {
+          onEdgesChange(
+            data.edges.map((item) => ({ type: "add" as const, item })),
+          );
+        }
+        if (data.nodes?.length ?? data.edges?.length) {
+          // Use a short timeout instead of rAF so React Flow's ResizeObserver
+          // has time to measure the newly-added nodes before we call fitView.
+          setTimeout(() => rf.fitView({ duration: 300, padding: 0.15 }), 120);
+        }
+      } catch {
+        // silently ignore — canvas will start empty
+      }
+    })();
+    // Intentional: run once on mount. Stale-closure values (nodes, edges) reflect
+    // the actual Liveblocks storage state at mount time (after suspense resolved).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const importTemplate = useCallback(
     (template: CanvasTemplate) => {
-      setEditingNodeId(null)
-      setResizingNodeId(null)
-      setEditingEdgeId(null)
+      setEditingNodeId(null);
+      setResizingNodeId(null);
+      setEditingEdgeId(null);
 
       if (edges.length) {
-        onEdgesChange(edges.map((edge) => ({ type: "remove", id: edge.id } satisfies EdgeChange<CanvasEdge>)))
+        onEdgesChange(
+          edges.map(
+            (edge) =>
+              ({
+                type: "remove",
+                id: edge.id,
+              }) satisfies EdgeChange<CanvasEdge>,
+          ),
+        );
       }
       if (nodes.length) {
-        onNodesChange(nodes.map((node) => ({ type: "remove", id: node.id } satisfies NodeChange<CanvasNode>)))
+        onNodesChange(
+          nodes.map(
+            (node) =>
+              ({
+                type: "remove",
+                id: node.id,
+              }) satisfies NodeChange<CanvasNode>,
+          ),
+        );
       }
 
       if (template.nodes.length) {
-        onNodesChange(template.nodes.map((item) => ({ type: "add", item } satisfies NodeChange<CanvasNode>)))
+        onNodesChange(
+          template.nodes.map(
+            (item) => ({ type: "add", item }) satisfies NodeChange<CanvasNode>,
+          ),
+        );
       }
       if (template.edges.length) {
-        onEdgesChange(template.edges.map((item) => ({ type: "add", item } satisfies EdgeChange<CanvasEdge>)))
+        onEdgesChange(
+          template.edges.map(
+            (item) => ({ type: "add", item }) satisfies EdgeChange<CanvasEdge>,
+          ),
+        );
       }
 
       window.requestAnimationFrame(() => {
-        rf.fitView({ duration: 220, padding: 0.2 })
-      })
+        rf.fitView({ duration: 220, padding: 0.2 });
+      });
     },
     [edges, nodes, onEdgesChange, onNodesChange, rf],
-  )
+  );
 
   useImperativeHandle(
     canvasHandleRef,
@@ -537,101 +847,107 @@ function CanvasFlow({ canvasHandleRef }: { canvasHandleRef: Ref<WorkspaceCanvasH
       importTemplate,
     }),
     [importTemplate],
-  )
+  );
 
   const commitEdgeLabel = useMutation(
     ({ storage }, edgeId: string, label: string) => {
-      const flow = storage.get("flow")
-      if (!flow) return
-      const edges = (flow as unknown as { get: (k: "edges") => unknown }).get("edges") as
+      const flow = storage.get("flow");
+      if (!flow) return;
+      const edges = (flow as unknown as { get: (k: "edges") => unknown }).get(
+        "edges",
+      ) as
         | {
-            get: (id: string) => unknown
+            get: (id: string) => unknown;
           }
-        | undefined
+        | undefined;
       const edge = edges?.get(edgeId) as
         | {
-            get: (k: "data") => unknown
+            get: (k: "data") => unknown;
           }
-        | undefined
+        | undefined;
       const dataObj = edge?.get("data") as
         | {
-            set: (k: "label", v: string) => void
+            set: (k: "label", v: string) => void;
           }
-        | undefined
-      dataObj?.set("label", label)
+        | undefined;
+      dataObj?.set("label", label);
     },
     [],
-  )
+  );
 
   const updateNodeLabel = useMutation(
     ({ storage }, nodeId: string, label: string) => {
-      const flow = storage.get("flow")
-      if (!flow) return
+      const flow = storage.get("flow");
+      if (!flow) return;
       // `flow.nodes[id].data.label = label` (synced)
-      const nodes = (flow as unknown as { get: (k: "nodes") => unknown }).get("nodes") as
+      const nodes = (flow as unknown as { get: (k: "nodes") => unknown }).get(
+        "nodes",
+      ) as
         | {
-            get: (id: string) => unknown
+            get: (id: string) => unknown;
           }
-        | undefined
+        | undefined;
       const node = nodes?.get(nodeId) as
         | {
-            get: (k: "data") => unknown
+            get: (k: "data") => unknown;
           }
-        | undefined
+        | undefined;
       const dataObj = node?.get("data") as
         | {
-            set: (k: "label", v: string) => void
+            set: (k: "label", v: string) => void;
           }
-        | undefined
-      dataObj?.set("label", label)
+        | undefined;
+      dataObj?.set("label", label);
     },
     [],
-  )
+  );
 
   const updateNodeColors = useMutation(
     ({ storage }, nodeId: string, pair: CanvasNodeColorPair) => {
-      const flow = storage.get("flow")
-      if (!flow) return
-      const nodes = (flow as unknown as { get: (k: "nodes") => unknown }).get("nodes") as
+      const flow = storage.get("flow");
+      if (!flow) return;
+      const nodes = (flow as unknown as { get: (k: "nodes") => unknown }).get(
+        "nodes",
+      ) as
         | {
-            get: (id: string) => unknown
+            get: (id: string) => unknown;
           }
-        | undefined
+        | undefined;
       const node = nodes?.get(nodeId) as
         | {
-            get: (k: "data") => unknown
+            get: (k: "data") => unknown;
           }
-        | undefined
+        | undefined;
       const dataObj = node?.get("data") as
         | {
-            set: (k: "color" | "textColor", v: string) => void
+            set: (k: "color" | "textColor", v: string) => void;
           }
-        | undefined
-      dataObj?.set("color", pair.fill)
-      dataObj?.set("textColor", pair.text)
+        | undefined;
+      dataObj?.set("color", pair.fill);
+      dataObj?.set("textColor", pair.text);
     },
     [],
-  )
+  );
 
   const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = "copy"
-  }, [])
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }, []);
 
   const onDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
-      e.preventDefault()
+      e.preventDefault();
 
       const raw =
         e.dataTransfer.getData(SHAPE_DND_MIME) ??
-        e.dataTransfer.getData("text/plain")
-      if (!raw) return
+        e.dataTransfer.getData("text/plain");
+      if (!raw) return;
 
-      let payload: ShapePayload | null = null
+      let payload: ShapePayload | null = null;
       try {
-        payload = JSON.parse(raw) as ShapePayload
+        payload = JSON.parse(raw) as ShapePayload;
       } catch {
-        return
+        return;
       }
 
       if (
@@ -640,16 +956,23 @@ function CanvasFlow({ canvasHandleRef }: { canvasHandleRef: Ref<WorkspaceCanvasH
         typeof payload.width !== "number" ||
         typeof payload.height !== "number"
       ) {
-        return
+        return;
       }
 
-      const position = rf.screenToFlowPosition({
+      // Convert cursor to flow coordinates, then offset by half the node
+      // dimensions so the dropped node is centred on the cursor — matching
+      // the drag preview which uses translate(-50%, -50%).
+      const cursorFlowPos = rf.screenToFlowPosition({
         x: e.clientX,
         y: e.clientY,
-      })
+      });
+      const position = {
+        x: cursorFlowPos.x - payload.width / 2,
+        y: cursorFlowPos.y - payload.height / 2,
+      };
 
-      const nextCounter = (idCounterRef.current += 1)
-      const id = `${payload.shape}-${Date.now()}-${nextCounter}`
+      const nextCounter = (idCounterRef.current += 1);
+      const id = `${payload.shape}-${Date.now()}-${nextCounter}`;
 
       const newNode: CanvasNode = {
         id,
@@ -662,18 +985,20 @@ function CanvasFlow({ canvasHandleRef }: { canvasHandleRef: Ref<WorkspaceCanvasH
           shape: payload.shape,
         },
         style: { width: payload.width, height: payload.height },
-      }
+      };
 
-      const changes: NodeChange<CanvasNode>[] = [{ type: "add", item: newNode }]
-      onNodesChange(changes)
+      const changes: NodeChange<CanvasNode>[] = [
+        { type: "add", item: newNode },
+      ];
+      onNodesChange(changes);
     },
     [onNodesChange, rf],
-  )
+  );
 
   const onConnect: OnConnect = useCallback(
     (connection) => {
-      const nextCounter = (idCounterRef.current += 1)
-      const id = `e-${Date.now()}-${nextCounter}`
+      const nextCounter = (idCounterRef.current += 1);
+      const id = `e-${Date.now()}-${nextCounter}`;
 
       const newEdge: CanvasEdge = {
         id,
@@ -688,12 +1013,12 @@ function CanvasFlow({ canvasHandleRef }: { canvasHandleRef: Ref<WorkspaceCanvasH
           stroke: "color-mix(in oklab, var(--foreground) 46%, transparent)",
           strokeWidth: 2,
         },
-      }
+      };
 
-      onEdgesChange([{ type: "add", item: newEdge }])
+      onEdgesChange([{ type: "add", item: newEdge }]);
     },
     [onEdgesChange],
-  )
+  );
 
   const CanvasNodeType = useMemo(() => {
     return function CanvasNodeTypeInner(props: NodeProps<CanvasNode>) {
@@ -707,9 +1032,15 @@ function CanvasFlow({ canvasHandleRef }: { canvasHandleRef: Ref<WorkspaceCanvasH
           updateNodeLabel={updateNodeLabel}
           updateNodeColors={updateNodeColors}
         />
-      )
-    }
-  }, [editingNodeId, resizingNodeId, setResizingNodeId, updateNodeColors, updateNodeLabel])
+      );
+    };
+  }, [
+    editingNodeId,
+    resizingNodeId,
+    setResizingNodeId,
+    updateNodeColors,
+    updateNodeLabel,
+  ]);
 
   const edgeTypes = useMemo(() => {
     return {
@@ -722,18 +1053,24 @@ function CanvasFlow({ canvasHandleRef }: { canvasHandleRef: Ref<WorkspaceCanvasH
           onStopEditing={() => setEditingEdgeId(null)}
         />
       ),
-    }
-  }, [commitEdgeLabel, editingEdgeId])
+    };
+  }, [commitEdgeLabel, editingEdgeId]);
 
   return (
-    <div className="relative h-full w-full" onDragOver={onDragOver} onDrop={onDrop}>
-      <img
+    <div
+      className="relative h-full w-full"
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
+      <Image
         ref={dragImageRef}
         src={EMPTY_DRAG_IMG_SRC}
         alt=""
         aria-hidden
         className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
         draggable={false}
+        width={0}
+        height={0}
       />
       {dragPreview ? (
         <div
@@ -760,11 +1097,17 @@ function CanvasFlow({ canvasHandleRef }: { canvasHandleRef: Ref<WorkspaceCanvasH
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onDelete={onDelete}
+        onMouseMove={onMouseMove}
+        onMouseLeave={onMouseLeave}
         onEdgeDoubleClick={(e, edge) => {
-          e.preventDefault()
-          e.stopPropagation()
-          setEditingEdgeId(edge.id)
+          e.preventDefault();
+          e.stopPropagation();
+          setEditingEdgeId(edge.id);
         }}
+        // React Flow v12 defaults deleteKeyCode to "Backspace" only.
+        // Adding "Delete" makes the keyboard Delete key work for selected elements.
+        deleteKeyCode={["Backspace", "Delete"]}
+        minZoom={0.05}
         connectionMode={ConnectionMode.Loose}
         connectionRadius={42}
         fitView
@@ -785,6 +1128,9 @@ function CanvasFlow({ canvasHandleRef }: { canvasHandleRef: Ref<WorkspaceCanvasH
       >
         <Background variant={BackgroundVariant.Dots} gap={18} size={1.25} />
       </ReactFlow>
+
+      <PresenceCursors />
+      <PresenceAvatarGroup />
 
       <div className="pointer-events-auto absolute bottom-5 left-5 z-10">
         <div className="flex items-center gap-1.5 rounded-full border border-border/70 bg-background/70 px-2 py-2 shadow-[0_10px_30px_-18px_rgba(0,0,0,0.7)] backdrop-blur-md">
@@ -858,16 +1204,27 @@ function CanvasFlow({ canvasHandleRef }: { canvasHandleRef: Ref<WorkspaceCanvasH
         onDragPreviewChange={setDragPreview}
       />
     </div>
-  )
+  );
 }
 
-const CanvasInner = forwardRef<WorkspaceCanvasHandle>(function CanvasInnerInner(_, ref) {
-  return (
-    <ReactFlowProvider>
-      <CanvasFlow canvasHandleRef={ref} />
-    </ReactFlowProvider>
-  )
-})
+interface CanvasInnerProps {
+  roomId: string;
+  onSaveStatusChange?: (status: SaveStatus) => void;
+}
+
+const CanvasInner = forwardRef<WorkspaceCanvasHandle, CanvasInnerProps>(
+  function CanvasInnerInner({ roomId, onSaveStatusChange }, ref) {
+    return (
+      <ReactFlowProvider>
+        <CanvasFlow
+          canvasHandleRef={ref}
+          roomId={roomId}
+          onSaveStatusChange={onSaveStatusChange}
+        />
+      </ReactFlowProvider>
+    );
+  },
+);
 
 function CanvasLoading() {
   return (
@@ -876,7 +1233,7 @@ function CanvasLoading() {
         Loading canvas…
       </div>
     </div>
-  )
+  );
 }
 
 function CanvasErrorFallback() {
@@ -886,26 +1243,31 @@ function CanvasErrorFallback() {
         Live collaboration failed to connect. Try refreshing.
       </div>
     </div>
-  )
+  );
 }
 
-export const WorkspaceCanvas = forwardRef<WorkspaceCanvasHandle, WorkspaceCanvasProps>(
-  function WorkspaceCanvasInner({ roomId }, ref) {
+export const WorkspaceCanvas = forwardRef<
+  WorkspaceCanvasHandle,
+  WorkspaceCanvasProps
+>(function WorkspaceCanvasInner({ roomId, onSaveStatusChange }, ref) {
   const initialPresence = useMemo(
-    () => ({ cursor: null, isThinking: false }),
+    () => ({ cursor: null, thinking: false }),
     [],
-  )
+  );
 
   return (
     <LiveblocksProvider authEndpoint="/api/liveblocks-auth">
       <RoomProvider id={roomId} initialPresence={initialPresence}>
         <ErrorBoundary fallback={<CanvasErrorFallback />}>
           <ClientSideSuspense fallback={<CanvasLoading />}>
-            <CanvasInner ref={ref} />
+            <CanvasInner
+              ref={ref}
+              roomId={roomId}
+              onSaveStatusChange={onSaveStatusChange}
+            />
           </ClientSideSuspense>
         </ErrorBoundary>
       </RoomProvider>
     </LiveblocksProvider>
-  )
-})
-
+  );
+});

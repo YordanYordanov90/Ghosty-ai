@@ -1,20 +1,63 @@
 "use client";
 
-import { UserButton } from "@clerk/nextjs";
-import { Bot, LayoutTemplate, PanelLeftClose, PanelLeftOpen, Share } from "lucide-react";
+import {
+  AlertCircle,
+  Bot,
+  Check,
+  LayoutTemplate,
+  Loader2,
+  Share,
+} from "lucide-react";
 import { useRef, useState } from "react";
 
+import { AiWorkspaceSidebar } from "@/components/editor/ai-workspace-sidebar";
 import { WorkspaceCanvas } from "@/components/editor/canvas/workspace-canvas";
+import { EditorTopNav } from "@/components/editor/editor-top-nav";
 import { ProjectDialogs } from "@/components/editor/project-dialogs";
 import { ShareDialog } from "@/components/editor/share-dialog";
 import { ProjectSidebar } from "@/components/editor/project-sidebar";
 import { StarterTemplatesModal } from "@/components/editor/starter-templates-modal";
 import { Button } from "@/components/ui/button";
-import { clerkAppearance } from "@/lib/clerk-appearance";
 import { useEditorProjectActions } from "@/hooks/use-editor-project-actions";
 import { useShareDialog } from "@/hooks/use-share-dialog";
 import type { WorkspaceCanvasHandle } from "@/components/editor/canvas/workspace-canvas";
+import type { SaveStatus } from "@/hooks/use-canvas-autosave";
 import type { EditorProject } from "@/types/editor-project";
+import { cn } from "@/lib/utils";
+
+/** Small save-status pill shown in the workspace top-nav trailingActions slot. */
+function CanvasSaveStatus({ status }: { status: SaveStatus }) {
+  if (status === "idle") return null;
+
+  return (
+    <span
+      className={cn(
+        "flex items-center gap-1.5 text-xs",
+        status === "error" ? "text-destructive" : "text-muted-foreground",
+      )}
+      aria-live="polite"
+    >
+      {status === "saving" && (
+        <>
+          <Loader2 className="size-3 animate-spin" aria-hidden />
+          <span>Saving…</span>
+        </>
+      )}
+      {status === "saved" && (
+        <>
+          <Check className="size-3 text-emerald-500" aria-hidden />
+          <span>Saved</span>
+        </>
+      )}
+      {status === "error" && (
+        <>
+          <AlertCircle className="size-3" aria-hidden />
+          <span>Save failed</span>
+        </>
+      )}
+    </span>
+  );
+}
 
 interface WorkspaceLayoutProps {
   projectId: string;
@@ -32,6 +75,7 @@ export function WorkspaceLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [aiSidebarOpen, setAiSidebarOpen] = useState(false);
   const [starterOpen, setStarterOpen] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const canvasRef = useRef<WorkspaceCanvasHandle | null>(null);
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
@@ -46,36 +90,12 @@ export function WorkspaceLayout({
 
   return (
     <div className="min-h-dvh bg-background">
-      {/* Navbar — frosted glass, aligned with auth / marketing shell */}
-      <header className="fixed inset-x-0 top-0 z-50 flex h-14 shrink-0 items-stretch border-b border-border/60 bg-background/75 backdrop-blur-md supports-backdrop-filter:bg-background/65">
-        <div className="grid h-full w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4">
-          <div className="flex items-center justify-start">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-expanded={sidebarOpen}
-              title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
-              aria-label={
-                sidebarOpen ? "Close project sidebar" : "Open project sidebar"
-              }
-              onClick={toggleSidebar}
-              className="gap-2"
-            >
-              {sidebarOpen ? (
-                <PanelLeftClose className="size-4" />
-              ) : (
-                <PanelLeftOpen className="size-4" />
-              )}
-              <span className="hidden sm:inline">Projects</span>
-            </Button>
-          </div>
-
-          <h1 className="min-w-0 truncate text-center text-sm font-semibold tracking-tight text-foreground">
-            {projectName}
-          </h1>
-
-          <div className="flex items-center justify-end gap-1.5 sm:gap-2">
+      <EditorTopNav
+        sidebarOpen={sidebarOpen}
+        onSidebarToggle={toggleSidebar}
+        title={projectName}
+        trailingActions={
+          <>
             <Button
               type="button"
               variant="ghost"
@@ -85,8 +105,8 @@ export function WorkspaceLayout({
               onClick={() => setStarterOpen(true)}
               className="gap-2"
             >
-              <LayoutTemplate className="size-4" />
-              <span className="hidden sm:inline">Templates</span>
+              <LayoutTemplate className="size-4 shrink-0" />
+              <span>Templates</span>
             </Button>
             <Button
               type="button"
@@ -97,9 +117,10 @@ export function WorkspaceLayout({
               onClick={() => share.setOpen(true)}
               className="gap-2"
             >
-              <Share className="size-4" />
-              <span className="hidden sm:inline">Share</span>
+              <Share className="size-4 shrink-0" />
+              <span>Share</span>
             </Button>
+            <CanvasSaveStatus status={saveStatus} />
             <Button
               type="button"
               variant="ghost"
@@ -112,24 +133,12 @@ export function WorkspaceLayout({
               onClick={toggleAiSidebar}
               className="gap-2"
             >
-              <Bot className="size-4" />
-              <span className="hidden sm:inline">AI</span>
+              <Bot className="size-4 shrink-0" />
+              <span>AI</span>
             </Button>
-            <UserButton
-              appearance={{
-                ...clerkAppearance.userButton,
-                variables: clerkAppearance.variables,
-              }}
-              userProfileProps={{
-                appearance: {
-                  ...clerkAppearance.userProfile,
-                  variables: clerkAppearance.variables,
-                },
-              }}
-            />
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       {/* Main layout */}
       <div className="flex min-h-dvh pt-14">
@@ -162,28 +171,18 @@ export function WorkspaceLayout({
           </div>
 
           <div className="relative z-10 min-h-[calc(100dvh-3.5rem)] flex-1">
-            <WorkspaceCanvas ref={canvasRef} roomId={projectId} />
+            <WorkspaceCanvas
+              ref={canvasRef}
+              roomId={projectId}
+              onSaveStatusChange={setSaveStatus}
+            />
           </div>
         </div>
 
-        {aiSidebarOpen && (
-          <aside className="flex w-80 shrink-0 flex-col border-l border-border-default bg-surface shadow-[inset_1px_0_0_0_color-mix(in_oklab,var(--border-default)_80%,transparent)]">
-            <div className="shrink-0 border-b border-border/60 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                AI assistant
-              </p>
-              <p className="mt-1 text-sm font-medium tracking-tight text-foreground">
-                Co-pilot
-              </p>
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto p-4">
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                Prompt the graph, refine nodes, and export specs — this panel
-                will host chat and context for your canvas.
-              </p>
-            </div>
-          </aside>
-        )}
+        <AiWorkspaceSidebar
+          open={aiSidebarOpen}
+          onClose={() => setAiSidebarOpen(false)}
+        />
       </div>
     </div>
   );
