@@ -1,5 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { AbortTaskRunError, logger, metadata, schemaTask } from "@trigger.dev/sdk";
+import { LiveblocksError } from "@liveblocks/node";
 import { mutateFlow } from "@liveblocks/react-flow/node";
 import { generateText, type LanguageModel } from "ai";
 import {
@@ -13,6 +14,7 @@ import {
   type DesignAgentPlan,
 } from "@/lib/design-agent-schema";
 import { designAgentPresenceUserId } from "@/lib/design-agent-constants";
+import { AI_STATUS_FEED_ID } from "@/lib/ai-status-feed-constants";
 import { getLiveblocks } from "@/lib/liveblocks";
 import { postDesignAgentFeedMessage } from "@/lib/liveblocks-design-agent";
 import type { CanvasEdge, CanvasNode } from "@/types/canvas";
@@ -41,15 +43,52 @@ Respond with exactly one JSON object (no markdown code fences, no prose before o
   "summary": string,
   "actions": Action[]
 }
-Each Action has "type" and fields for that type only:
-- addNode: id, label, shape ("rectangle"|"diamond"|"circle"|"pill"|"cylinder"|"hexagon"), x, y; optional width, height, colorIndex (integer 0-7)
-- moveNode: id, x, y
-- resizeNode: id, width, height
-- updateNodeData: id; optional label, shape, colorIndex
-- deleteNode: id
-- addEdge: id, source, target; optional label
-- deleteEdge: id
+Each Action MUST have a "type" field using EXACTLY one of these camelCase string values (no snake_case, no abbreviations):
+  "addNode" | "moveNode" | "resizeNode" | "updateNodeData" | "deleteNode" | "addEdge" | "deleteEdge"
+
+Fields per type (only include fields for that type):
+- { "type": "addNode", "id": string, "label": string, "shape": "rectangle"|"diamond"|"circle"|"pill"|"cylinder"|"hexagon", "x": number, "y": number, "width"?: number, "height"?: number, "colorIndex"?: 0-7 }
+- { "type": "moveNode", "id": string, "x": number, "y": number }
+- { "type": "resizeNode", "id": string, "width": number, "height": number }
+- { "type": "updateNodeData", "id": string, "label"?: string, "shape"?: string, "colorIndex"?: 0-7 }
+- { "type": "deleteNode", "id": string }
+- { "type": "addEdge", "id": string, "source": string, "target": string, "label"?: string }
+- { "type": "deleteEdge", "id": string }
+
+CRITICAL: The "type" field must be exactly one of the seven camelCase strings above. Do not use any other value.
 `;
+
+const ACTION_TYPE_ALIASES: Record<string, string> = {
+  add_node: "addNode",
+  move_node: "moveNode",
+  resize_node: "resizeNode",
+  update_node_data: "updateNodeData",
+  update_node: "updateNodeData",
+  updateNode: "updateNodeData",
+  delete_node: "deleteNode",
+  remove_node: "deleteNode",
+  removeNode: "deleteNode",
+  add_edge: "addEdge",
+  delete_edge: "deleteEdge",
+  remove_edge: "deleteEdge",
+  removeEdge: "deleteEdge",
+};
+
+function normalizeActionTypes(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const obj = raw as Record<string, unknown>;
+  if (!Array.isArray(obj.actions)) return raw;
+  return {
+    ...obj,
+    actions: obj.actions.map((action) => {
+      if (!action || typeof action !== "object" || Array.isArray(action)) return action;
+      const a = action as Record<string, unknown>;
+      const t = typeof a.type === "string" ? a.type : undefined;
+      const normalizedType = t ? (ACTION_TYPE_ALIASES[t] ?? t) : t;
+      return normalizedType !== t ? { ...a, type: normalizedType } : a;
+    }),
+  };
+}
 
 function extractJsonObject(text: string): unknown {
   const trimmed = text.trim();
@@ -61,7 +100,7 @@ function extractJsonObject(text: string): unknown {
     throw new Error("Model output did not contain a JSON object");
   }
   try {
-    return JSON.parse(candidate.slice(start, end + 1));
+    return normalizeActionTypes(JSON.parse(candidate.slice(start, end + 1)));
   } catch {
     throw new Error("Model output was not valid JSON");
   }
@@ -74,7 +113,7 @@ async function generateDesignPlan(
 ): Promise<DesignAgentPlan> {
   const repair =
     repairHint !== undefined
-      ? `\nPrevious attempt failed: ${repairHint}\nReturn corrected JSON only.`
+      ? `\nPrevious attempt failed validation: ${repairHint}\nReturn corrected JSON only. Ensure every action "type" is one of: "addNode","moveNode","resizeNode","updateNodeData","deleteNode","addEdge","deleteEdge" — exact camelCase, no other values.`
       : "";
 
   const { text } = await generateText({
@@ -175,6 +214,49 @@ async function clearAiPresence(
   });
 }
 
+async function ensureAiStatusFeed(
+  liveblocks: ReturnType<typeof getLiveblocks>,
+  roomId: string,
+) {
+  try {
+    await liveblocks.getFeed({ roomId, feedId: AI_STATUS_FEED_ID });
+    return;
+  } catch {
+    /* feed missing — create */
+  }
+  try {
+    await liveblocks.createFeed({
+      roomId,
+      feedId: AI_STATUS_FEED_ID,
+      metadata: { name: "AI Status" },
+    });
+  } catch (err) {
+    if (err instanceof LiveblocksError && err.status === 409) return;
+    throw err;
+  }
+}
+
+async function postAiStatusMessage(
+  liveblocks: ReturnType<typeof getLiveblocks>,
+  roomId: string,
+  data: { runId: string; phase: "start" | "processing" | "complete" | "error"; message: string },
+) {
+  await ensureAiStatusFeed(liveblocks, roomId);
+  const mappedPhase =
+    data.phase === "complete" || data.phase === "error" ? data.phase : "active";
+  await liveblocks.createFeedMessage({
+    roomId,
+    feedId: AI_STATUS_FEED_ID,
+    data: {
+      runId: data.runId,
+      phase: mappedPhase,
+      taskKind: "design",
+      text: data.message,
+      ts: Date.now(),
+    },
+  });
+}
+
 export const designAgentTask = schemaTask({
   id: "design-agent",
   schema: designAgentPayloadSchema,
@@ -200,17 +282,18 @@ export const designAgentTask = schemaTask({
       metadata.set("phase", phase);
       metadata.set("lastMessage", message);
       metadata.set("runId", runId);
-      try {
-        await postDesignAgentFeedMessage(liveblocks, room, {
-          runId,
-          phase,
-          message,
-        });
-      } catch (err) {
-        logger.error("design-agent feed message failed", {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+      await Promise.allSettled([
+        postDesignAgentFeedMessage(liveblocks, room, { runId, phase, message }).catch((err) => {
+          logger.error("design-agent activity feed failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }),
+        postAiStatusMessage(liveblocks, room, { runId, phase, message }).catch((err) => {
+          logger.error("design-agent status feed failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }),
+      ]);
     };
 
     await setStatus("start", "Starting AI Architect…");
