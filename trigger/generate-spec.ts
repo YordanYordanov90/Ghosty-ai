@@ -164,12 +164,9 @@ export const generateSpecTask = schemaTask({
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      await publishStatus(
-        statusCtx,
-        "error",
-        "OPENAI_API_KEY is not configured for this environment.",
-      );
-      return { ok: false as const, runId, error: "missing_openai_key" };
+      const msg = "OPENAI_API_KEY is not configured for this environment.";
+      await publishStatus(statusCtx, "error", msg);
+      throw new AbortTaskRunError(msg);
     }
 
     try {
@@ -206,12 +203,9 @@ export const generateSpecTask = schemaTask({
 
       const spec = text.trim();
       if (!spec) {
-        await publishStatus(
-          statusCtx,
-          "error",
-          "Spec generation returned empty output.",
-        );
-        return { ok: false as const, runId, error: "empty_spec_output" };
+        const msg = "Spec generation returned empty output.";
+        await publishStatus(statusCtx, "error", msg);
+        throw new AbortTaskRunError(msg);
       }
 
       metadata.set("specBytes", spec.length);
@@ -219,12 +213,10 @@ export const generateSpecTask = schemaTask({
       await publishStatus(statusCtx, "processing", "Saving spec for download…");
 
       if (!process.env.BLOB_READ_WRITE_TOKEN) {
-        await publishStatus(
-          statusCtx,
-          "error",
-          "BLOB_READ_WRITE_TOKEN is not configured for this environment.",
-        );
-        return { ok: false as const, runId, error: "missing_blob_token" };
+        const msg =
+          "BLOB_READ_WRITE_TOKEN is not configured for this environment.";
+        await publishStatus(statusCtx, "error", msg);
+        throw new AbortTaskRunError(msg);
       }
 
       const specId = randomUUID();
