@@ -33,7 +33,12 @@ import {
   type EdgeProps,
   useReactFlow,
 } from "@xyflow/react";
-import { useMutation, useOthers, useUpdateMyPresence } from "@liveblocks/react";
+import {
+  useFeedMessages,
+  useMutation,
+  useOthers,
+  useUpdateMyPresence,
+} from "@liveblocks/react";
 import { useLiveblocksFlow } from "@liveblocks/react-flow";
 import {
   useCanRedo,
@@ -52,6 +57,7 @@ import {
   Minus,
   Plus,
   Scan,
+  Sparkles,
   Undo2,
   Redo2,
 } from "lucide-react";
@@ -69,6 +75,11 @@ import { cn } from "@/lib/utils";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useCanvasAutosave } from "@/hooks/use-canvas-autosave";
 import type { SaveStatus } from "@/hooks/use-canvas-autosave";
+import { AI_STATUS_FEED_ID } from "@/lib/ai-status-feed-constants";
+import {
+  isAiGenerationActiveFromPayload,
+  parseAiStatusFeedPayload,
+} from "@/types/tasks";
 
 import "@xyflow/react/dist/style.css";
 import "@liveblocks/react-ui/styles.css";
@@ -230,6 +241,160 @@ function PresenceCursors() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Constellation dots for the AI generation overlay. Positions are tuned to frame
+ * the center status card (avoiding the ~35–65% × 35–65% center band) so the dots
+ * read as a backdrop, not collision noise.
+ *
+ * `driftX` / `driftY` are injected as CSS custom properties consumed by the
+ * `ai-overlay-drift` keyframe in `globals.css`.
+ */
+const AI_OVERLAY_DOTS: ReadonlyArray<{
+  top: string;
+  left: string;
+  driftX: string;
+  driftY: string;
+  delay: string;
+  hue: "cyan" | "indigo";
+}> = [
+  { top: "12%", left: "14%", driftX: "6px", driftY: "-8px", delay: "0ms", hue: "cyan" },
+  { top: "18%", left: "38%", driftX: "-7px", driftY: "5px", delay: "220ms", hue: "indigo" },
+  { top: "14%", left: "64%", driftX: "9px", driftY: "6px", delay: "440ms", hue: "cyan" },
+  { top: "22%", left: "86%", driftX: "-5px", driftY: "-7px", delay: "660ms", hue: "indigo" },
+  { top: "38%", left: "10%", driftX: "7px", driftY: "4px", delay: "880ms", hue: "indigo" },
+  { top: "42%", left: "92%", driftX: "-6px", driftY: "-5px", delay: "1100ms", hue: "cyan" },
+  { top: "58%", left: "6%", driftX: "5px", driftY: "8px", delay: "1320ms", hue: "cyan" },
+  { top: "62%", left: "94%", driftX: "-8px", driftY: "-6px", delay: "1540ms", hue: "indigo" },
+  { top: "78%", left: "18%", driftX: "6px", driftY: "5px", delay: "1760ms", hue: "indigo" },
+  { top: "82%", left: "42%", driftX: "-7px", driftY: "7px", delay: "1980ms", hue: "cyan" },
+  { top: "74%", left: "68%", driftX: "8px", driftY: "-5px", delay: "2200ms", hue: "indigo" },
+  { top: "86%", left: "88%", driftX: "-6px", driftY: "6px", delay: "2420ms", hue: "cyan" },
+];
+
+const AI_OVERLAY_LINES: ReadonlyArray<{
+  x1: string;
+  y1: string;
+  x2: string;
+  y2: string;
+  delay: string;
+  hue: "cyan" | "indigo";
+}> = [
+  { x1: "14%", y1: "12%", x2: "38%", y2: "18%", delay: "0ms", hue: "cyan" },
+  { x1: "64%", y1: "14%", x2: "86%", y2: "22%", delay: "600ms", hue: "indigo" },
+  { x1: "18%", y1: "78%", x2: "42%", y2: "82%", delay: "1200ms", hue: "indigo" },
+  { x1: "68%", y1: "74%", x2: "88%", y2: "86%", delay: "1800ms", hue: "cyan" },
+];
+
+function CanvasGenerationOverlay({ isCanvasEmpty }: { isCanvasEmpty: boolean }) {
+  const { messages } = useFeedMessages(AI_STATUS_FEED_ID);
+
+  const latestPayload = useMemo(() => {
+    if (!messages?.length) return null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const parsed = parseAiStatusFeedPayload(messages[i].data);
+      if (parsed) return parsed;
+    }
+    return null;
+  }, [messages]);
+
+  const show = isAiGenerationActiveFromPayload(latestPayload) && isCanvasEmpty;
+  
+  const statusText =
+    latestPayload?.text?.trim() || "Planning architecture\u2026";
+
+  const dotAnim = show ? "ai-overlay-drift 6s ease-in-out infinite" : undefined;
+  const lineAnim = show
+    ? "ai-overlay-flicker 2.4s ease-in-out infinite"
+    : undefined;
+  const haloAnim = show ? "ai-overlay-pulse 2.2s ease-in-out infinite" : undefined;
+
+  return (
+    <div
+      aria-hidden={!show}
+      aria-live="polite"
+      className={cn(
+        "pointer-events-none absolute inset-0 z-15 flex items-center justify-center",
+        "transition-opacity duration-300 ease-out motion-reduce:transition-none",
+        show ? "opacity-100" : "opacity-0",
+      )}
+    >
+      <svg
+        className="absolute inset-0 h-full w-full"
+        aria-hidden
+        preserveAspectRatio="none"
+      >
+        {AI_OVERLAY_LINES.map((line, idx) => (
+          <line
+            key={`ai-overlay-line-${idx}`}
+            x1={line.x1}
+            y1={line.y1}
+            x2={line.x2}
+            y2={line.y2}
+            strokeWidth={1}
+            stroke={
+              line.hue === "cyan" ? "var(--accent-primary)" : "var(--accent-ai)"
+            }
+            className="motion-reduce:animate-[none!important]"
+            style={{
+              animation: lineAnim,
+              animationDelay: line.delay,
+            }}
+          />
+        ))}
+      </svg>
+
+      {AI_OVERLAY_DOTS.map((dot, idx) => {
+        const color =
+          dot.hue === "cyan" ? "var(--accent-primary)" : "var(--accent-ai)";
+        const glowColor =
+          dot.hue === "cyan"
+            ? "color-mix(in oklab, var(--accent-primary) 60%, transparent)"
+            : "color-mix(in oklab, var(--accent-ai) 60%, transparent)";
+        return (
+          <span
+            key={`ai-overlay-dot-${idx}`}
+            aria-hidden
+            className="absolute size-1.5 rounded-full motion-reduce:animate-[none!important]"
+            style={{
+              top: dot.top,
+              left: dot.left,
+              backgroundColor: color,
+              boxShadow: `0 0 10px 1px ${glowColor}`,
+              ["--drift-x" as string]: dot.driftX,
+              ["--drift-y" as string]: dot.driftY,
+              animation: dotAnim,
+              animationDelay: dot.delay,
+            }}
+          />
+        );
+      })}
+
+      <div className="relative flex items-center gap-3 rounded-2xl border border-border-default/70 bg-elevated/55 px-5 py-4 shadow-[0_24px_60px_-32px_rgba(0,0,0,0.85)] backdrop-blur-md">
+        <span className="relative grid size-10 place-items-center rounded-xl border border-border-default/70 bg-base/60 text-ai-text">
+          <Sparkles className="size-5" aria-hidden />
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 rounded-xl motion-reduce:animate-[none!important]"
+            style={{
+              boxShadow:
+                "0 0 0 1px color-mix(in oklab, var(--accent-primary) 35%, transparent), 0 0 22px 4px color-mix(in oklab, var(--accent-primary) 22%, transparent)",
+              animation: haloAnim,
+            }}
+          />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-primary-text">
+            Ghost AI is designing your canvas
+          </p>
+          <p className="mt-0.5 max-w-[18rem] truncate text-xs text-muted-text">
+            {statusText}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1144,6 +1309,10 @@ function CanvasFlow({
       >
         <Background variant={BackgroundVariant.Dots} gap={18} size={1.25} />
       </ReactFlow>
+
+      <CanvasGenerationOverlay
+        isCanvasEmpty={nodes.length === 0 && edges.length === 0}
+      />
 
       <PresenceCursors />
       <PresenceAvatarGroup />
