@@ -15,6 +15,7 @@ import {
 } from "@/lib/design-agent-schema";
 import { designAgentPresenceUserId } from "@/lib/design-agent-constants";
 import { AI_STATUS_FEED_ID } from "@/lib/ai-status-feed-constants";
+import { normalizeDesignAgentPlanJson } from "@/lib/design-agent-plan-normalize";
 import { getLiveblocks } from "@/lib/liveblocks";
 import { postDesignAgentFeedMessage } from "@/lib/liveblocks-design-agent";
 import type { CanvasEdge, CanvasNode } from "@/types/canvas";
@@ -58,38 +59,6 @@ Fields per type (only include fields for that type):
 CRITICAL: The "type" field must be exactly one of the seven camelCase strings above. Do not use any other value.
 `;
 
-const ACTION_TYPE_ALIASES: Record<string, string> = {
-  add_node: "addNode",
-  move_node: "moveNode",
-  resize_node: "resizeNode",
-  update_node_data: "updateNodeData",
-  update_node: "updateNodeData",
-  updateNode: "updateNodeData",
-  delete_node: "deleteNode",
-  remove_node: "deleteNode",
-  removeNode: "deleteNode",
-  add_edge: "addEdge",
-  delete_edge: "deleteEdge",
-  remove_edge: "deleteEdge",
-  removeEdge: "deleteEdge",
-};
-
-function normalizeActionTypes(raw: unknown): unknown {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
-  const obj = raw as Record<string, unknown>;
-  if (!Array.isArray(obj.actions)) return raw;
-  return {
-    ...obj,
-    actions: obj.actions.map((action) => {
-      if (!action || typeof action !== "object" || Array.isArray(action)) return action;
-      const a = action as Record<string, unknown>;
-      const t = typeof a.type === "string" ? a.type : undefined;
-      const normalizedType = t ? (ACTION_TYPE_ALIASES[t] ?? t) : t;
-      return normalizedType !== t ? { ...a, type: normalizedType } : a;
-    }),
-  };
-}
-
 function extractJsonObject(text: string): unknown {
   const trimmed = text.trim();
   const fenced = /^```(?:json)?\s*([\s\S]*?)```$/m.exec(trimmed);
@@ -100,7 +69,8 @@ function extractJsonObject(text: string): unknown {
     throw new Error("Model output did not contain a JSON object");
   }
   try {
-    return normalizeActionTypes(JSON.parse(candidate.slice(start, end + 1)));
+    const parsed: unknown = JSON.parse(candidate.slice(start, end + 1));
+    return normalizeDesignAgentPlanJson(parsed);
   } catch {
     throw new Error("Model output was not valid JSON");
   }
@@ -141,12 +111,12 @@ async function generateDesignPlanWithRetry(
   userPayloadJson: string,
 ): Promise<DesignAgentPlan> {
   let lastErr: string | undefined;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await generateDesignPlan(model, userPayloadJson, lastErr);
     } catch (e) {
       lastErr = e instanceof Error ? e.message : String(e);
-      if (attempt === 1) throw e;
+      if (attempt === 2) throw e;
     }
   }
   throw new Error("design plan generation exhausted retries");

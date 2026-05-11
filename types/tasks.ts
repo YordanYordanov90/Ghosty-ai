@@ -15,6 +15,8 @@ export const aiStatusFeedPayloadSchema = z
     phase: aiStatusFeedPhaseSchema.optional(),
     taskKind: z.enum(["design", "spec"]).optional(),
     ts: z.number().optional(),
+    /** Trigger / room correlation — must be allowed or `.strict()` rejects every design-agent message. */
+    runId: z.string().max(200).optional(),
   })
   .strict();
 

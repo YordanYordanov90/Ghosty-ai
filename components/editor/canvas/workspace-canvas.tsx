@@ -301,7 +301,9 @@ function CanvasGenerationOverlay({ isCanvasEmpty }: { isCanvasEmpty: boolean }) 
     return null;
   }, [messages]);
 
-  const show = isAiGenerationActiveFromPayload(latestPayload) && isCanvasEmpty;
+  const show =
+    isAiGenerationActiveFromPayload(latestPayload) &&
+    (isCanvasEmpty || latestPayload?.taskKind === "design");
   
   const statusText =
     latestPayload?.text?.trim() || "Planning architecture\u2026";
