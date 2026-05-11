@@ -1,12 +1,12 @@
 import { auth } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
 import { z } from "zod";
 import { get, put } from "@vercel/blob";
 
 import { projects } from "@/drizzle/schema";
 import { db } from "@/lib/db";
 import { hasProjectAccess } from "@/lib/project-access";
+import { jsonError, jsonOk, NO_STORE_HEADERS, devDetail } from "@/lib/api-response";
 
 export const runtime = "nodejs";
 
@@ -21,11 +21,19 @@ const canvasBodySchema = z
   .strict();
 
 function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return jsonError({ status: 401, error: "Unauthorized", code: "unauthorized" });
 }
 
 function forbidden() {
-  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return jsonError({ status: 403, error: "Forbidden", code: "forbidden" });
+}
+
+function blobUnavailable() {
+  return jsonError({
+    status: 503,
+    error: "Blob storage unavailable",
+    code: "blob_unavailable",
+  });
 }
 
 // PUT /api/projects/[projectId]/canvas
@@ -40,7 +48,11 @@ export async function PUT(
   const { projectId: rawId } = await context.params;
   const idResult = projectIdSchema.safeParse(rawId);
   if (!idResult.success) {
-    return NextResponse.json({ error: "Invalid project id" }, { status: 400 });
+    return jsonError({
+      status: 400,
+      error: "Invalid project id",
+      code: "invalid_project_id",
+    });
   }
   const projectId = idResult.data;
 
@@ -51,21 +63,25 @@ export async function PUT(
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
-      { error: "Invalid request body" },
-      { status: 400 },
-    );
+    return jsonError({
+      status: 400,
+      error: "Invalid request body",
+      code: "invalid_body",
+    });
   }
 
   const parsed = canvasBodySchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Body must contain a nodes array and an edges array" },
-      { status: 400 },
-    );
+    return jsonError({
+      status: 400,
+      error: "Body must contain a nodes array and an edges array",
+      code: "invalid_body",
+    });
   }
 
   try {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) return blobUnavailable();
+
     // Deterministic pathname — one snapshot per project.
     // allowOverwrite: true is required so subsequent autosaves don't fail.
     // access: "private" matches the store configuration.
@@ -85,19 +101,14 @@ export async function PUT(
       .set({ canvasJsonPath: blob.url })
       .where(eq(projects.id, projectId));
 
-    return NextResponse.json({ url: blob.url });
+    return jsonOk({ url: blob.url }, { headers: NO_STORE_HEADERS });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json(
-      {
-        error: "Canvas save failed",
-        detail:
-          process.env.NODE_ENV === "development"
-            ? message
-            : "Unable to persist canvas JSON",
-      },
-      { status: 500 },
-    );
+    return jsonError({
+      status: 500,
+      error: "Canvas save failed",
+      code: "canvas_save_failed",
+      detail: devDetail(error) ?? "Unable to persist canvas JSON",
+    });
   }
 }
 
@@ -113,7 +124,11 @@ export async function GET(
   const { projectId: rawId } = await context.params;
   const idResult = projectIdSchema.safeParse(rawId);
   if (!idResult.success) {
-    return NextResponse.json({ error: "Invalid project id" }, { status: 400 });
+    return jsonError({
+      status: 400,
+      error: "Invalid project id",
+      code: "invalid_project_id",
+    });
   }
   const projectId = idResult.data;
 
@@ -127,28 +142,32 @@ export async function GET(
     .limit(1);
 
   if (!project) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return jsonError({ status: 404, error: "Not found", code: "not_found" });
   }
 
   // No canvas saved yet — return an empty canvas
   if (!project.canvasJsonPath) {
-    return NextResponse.json({ nodes: [], edges: [] });
+    return jsonOk({ nodes: [], edges: [] }, { headers: NO_STORE_HEADERS });
   }
 
   try {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      return jsonOk({ nodes: [], edges: [] }, { headers: NO_STORE_HEADERS });
+    }
+
     // Use the SDK's get() so auth headers are sent automatically for private blobs.
     const result = await get(project.canvasJsonPath, { access: "private" });
 
     if (!result || result.statusCode !== 200 || !result.stream) {
-      return NextResponse.json({ nodes: [], edges: [] });
+      return jsonOk({ nodes: [], edges: [] }, { headers: NO_STORE_HEADERS });
     }
 
     // ReadableStream → text → JSON (works in Node.js 18+ and Next.js edge/nodejs)
     const text = await new Response(result.stream).text();
     const data: unknown = JSON.parse(text);
-    return NextResponse.json(data);
+    return jsonOk(data, { headers: NO_STORE_HEADERS });
   } catch {
     // Blob unavailable — return empty canvas rather than an error
-    return NextResponse.json({ nodes: [], edges: [] });
+    return jsonOk({ nodes: [], edges: [] }, { headers: NO_STORE_HEADERS });
   }
 }

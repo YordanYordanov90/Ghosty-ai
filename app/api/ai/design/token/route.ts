@@ -1,12 +1,12 @@
 import { auth as clerkAuth } from "@clerk/nextjs/server";
 import { auth as triggerAuth } from "@trigger.dev/sdk";
 import { and, eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { taskRuns } from "@/drizzle/schema";
 import { db } from "@/lib/db";
 import { hasProjectAccess } from "@/lib/project-access";
+import { devDetail, jsonError, jsonOk } from "@/lib/api-response";
 
 export const runtime = "nodejs";
 
@@ -15,11 +15,11 @@ const bodySchema = z.object({
 });
 
 function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return jsonError({ status: 401, error: "Unauthorized", code: "unauthorized" });
 }
 
 function forbidden() {
-  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return jsonError({ status: 403, error: "Forbidden", code: "forbidden" });
 }
 
 // POST /api/ai/design/token
@@ -33,12 +33,12 @@ export async function POST(request: Request) {
   try {
     raw = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return jsonError({ status: 400, error: "Invalid JSON body", code: "invalid_json" });
   }
 
   const parsed = bodySchema.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+    return jsonError({ status: 400, error: "Invalid body", code: "invalid_body" });
   }
 
   const { runId } = parsed.data;
@@ -61,18 +61,13 @@ export async function POST(request: Request) {
       expirationTime: "1h",
     });
 
-    return NextResponse.json({ token });
+    return jsonOk({ token });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json(
-      {
-        error: "Failed to create token",
-        detail:
-          process.env.NODE_ENV === "development"
-            ? message
-            : "Unable to create token",
-      },
-      { status: 500 },
-    );
+    return jsonError({
+      status: 500,
+      error: "Failed to create token",
+      code: "token_create_failed",
+      detail: devDetail(error) ?? "Unable to create token",
+    });
   }
 }

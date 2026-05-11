@@ -1,6 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
 import { tasks } from "@trigger.dev/sdk";
-import { NextResponse } from "next/server";
 
 import { taskRuns } from "@/drizzle/schema";
 import { db } from "@/lib/db";
@@ -9,16 +8,17 @@ import {
   resolveSpecAgentProjectId,
   specAgentWirePayloadSchema,
 } from "@/lib/spec-agent-payload";
+import { devDetail, jsonError, jsonOk } from "@/lib/api-response";
 import type { generateSpecTask } from "@/trigger/generate-spec";
 
 export const runtime = "nodejs";
 
 function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return jsonError({ status: 401, error: "Unauthorized", code: "unauthorized" });
 }
 
 function forbidden() {
-  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return jsonError({ status: 403, error: "Forbidden", code: "forbidden" });
 }
 
 // POST /api/ai/spec
@@ -33,29 +33,26 @@ export async function POST(request: Request) {
   try {
     raw = await request.json();
   } catch {
-    return NextResponse.json(
-      { error: "Invalid JSON body" },
-      { status: 400 },
-    );
+    return jsonError({ status: 400, error: "Invalid JSON body", code: "invalid_json" });
   }
 
   const parsed = specAgentWirePayloadSchema.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid body", issues: parsed.error.flatten() },
-      { status: 400 },
-    );
+    return jsonError({
+      status: 400,
+      error: "Invalid body",
+      code: "invalid_body",
+      issues: parsed.error.flatten(),
+    });
   }
 
   const projectId = resolveSpecAgentProjectId({ roomId: parsed.data.roomId });
   if (!projectId) {
-    return NextResponse.json(
-      {
-        error:
-          "Invalid roomId — must be the project UUID for the workspace you're in.",
-      },
-      { status: 400 },
-    );
+    return jsonError({
+      status: 400,
+      error: "Invalid roomId — must be the project UUID for the workspace you're in.",
+      code: "invalid_room_id",
+    });
   }
 
   const accessible = await hasProjectAccess(projectId);
@@ -71,17 +68,12 @@ export async function POST(request: Request) {
       edges: parsed.data.edges,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json(
-      {
-        error: "Failed to trigger spec task",
-        detail:
-          process.env.NODE_ENV === "development"
-            ? message
-            : "Unable to trigger spec task",
-      },
-      { status: 500 },
-    );
+    return jsonError({
+      status: 500,
+      error: "Failed to trigger spec task",
+      code: "trigger_failed",
+      detail: devDetail(error) ?? "Unable to trigger spec task",
+    });
   }
 
   try {
@@ -96,5 +88,5 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ runId: handle.id }, { status: 202 });
+  return jsonOk({ runId: handle.id }, { status: 202 });
 }
