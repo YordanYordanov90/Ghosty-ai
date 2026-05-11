@@ -10,6 +10,10 @@ const isPublicRoute = createRouteMatcher([
   `${signUpPath}(.*)`,
   // Project REST handlers return JSON 401; avoid auth.protect() redirect for fetch clients
   "/api/projects(.*)",
+  // AI design routes also return JSON 401; let handlers enforce Clerk auth themselves
+  "/api/ai/design(.*)",
+  // AI spec routes follow the same JSON-401 pattern as design
+  "/api/ai/spec(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

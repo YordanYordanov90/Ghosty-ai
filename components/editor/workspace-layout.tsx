@@ -8,10 +8,18 @@ import {
   Loader2,
   Share,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { LiveblocksProvider, RoomProvider } from "@liveblocks/react";
+import { ClientSideSuspense } from "@liveblocks/react/suspense";
+import { useMemo, useRef, useState } from "react";
+import { ErrorBoundary } from "react-error-boundary";
 
 import { AiWorkspaceSidebar } from "@/components/editor/ai-workspace-sidebar";
-import { WorkspaceCanvas } from "@/components/editor/canvas/workspace-canvas";
+import {
+  type CanvasSnapshot,
+  WorkspaceCanvas,
+  WorkspaceCanvasErrorFallback,
+  WorkspaceCanvasLoading,
+} from "@/components/editor/canvas/workspace-canvas";
 import { EditorTopNav } from "@/components/editor/editor-top-nav";
 import { ProjectDialogs } from "@/components/editor/project-dialogs";
 import { ShareDialog } from "@/components/editor/share-dialog";
@@ -76,7 +84,15 @@ export function WorkspaceLayout({
   const [aiSidebarOpen, setAiSidebarOpen] = useState(false);
   const [starterOpen, setStarterOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [canvasSnapshot, setCanvasSnapshot] = useState<CanvasSnapshot>({
+    nodes: [],
+    edges: [],
+  });
   const canvasRef = useRef<WorkspaceCanvasHandle | null>(null);
+  const initialPresence = useMemo(
+    () => ({ cursor: null, thinking: false }),
+    [],
+  );
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
   const toggleAiSidebar = () => setAiSidebarOpen(!aiSidebarOpen);
@@ -163,26 +179,38 @@ export function WorkspaceLayout({
           currentProjectId={projectId}
         />
 
-        {/* Canvas — dot grid, ambient glows, subtle nodes (auth-marketing style) */}
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-base">
-          <div className="absolute inset-0 z-0" aria-hidden>
-            <div className="pointer-events-none absolute bottom-[-18%] right-[-12%] h-[min(75%,36rem)] w-[min(75%,36rem)] rounded-full bg-[radial-gradient(circle_closest-side,var(--accent-primary)_0%,transparent_100%)] opacity-[0.08]" />
-            <div className="pointer-events-none absolute left-[-14%] top-[-14%] h-[min(55%,24rem)] w-[min(55%,24rem)] rounded-full bg-[radial-gradient(circle_closest-side,var(--accent-ai)_0%,transparent_100%)] opacity-[0.06]" />
-          </div>
+        <LiveblocksProvider authEndpoint="/api/liveblocks-auth">
+          <RoomProvider id={projectId} initialPresence={initialPresence}>
+            {/* Canvas — dot grid, ambient glows, subtle nodes (auth-marketing style) */}
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-base">
+              <div className="absolute inset-0 z-0" aria-hidden>
+                <div className="pointer-events-none absolute bottom-[-18%] right-[-12%] h-[min(75%,36rem)] w-[min(75%,36rem)] rounded-full bg-[radial-gradient(circle_closest-side,var(--accent-primary)_0%,transparent_100%)] opacity-[0.08]" />
+                <div className="pointer-events-none absolute left-[-14%] top-[-14%] h-[min(55%,24rem)] w-[min(55%,24rem)] rounded-full bg-[radial-gradient(circle_closest-side,var(--accent-ai)_0%,transparent_100%)] opacity-[0.06]" />
+              </div>
 
-          <div className="relative z-10 min-h-[calc(100dvh-3.5rem)] flex-1">
-            <WorkspaceCanvas
-              ref={canvasRef}
+              <div className="relative z-10 min-h-[calc(100dvh-3.5rem)] flex-1">
+                <ErrorBoundary fallback={<WorkspaceCanvasErrorFallback />}>
+                  <ClientSideSuspense fallback={<WorkspaceCanvasLoading />}>
+                    <WorkspaceCanvas
+                      ref={canvasRef}
+                      roomId={projectId}
+                      onSaveStatusChange={setSaveStatus}
+                      onCanvasSnapshotChange={setCanvasSnapshot}
+                    />
+                  </ClientSideSuspense>
+                </ErrorBoundary>
+              </div>
+            </div>
+
+            <AiWorkspaceSidebar
               roomId={projectId}
-              onSaveStatusChange={setSaveStatus}
+              canvasNodes={canvasSnapshot.nodes}
+              canvasEdges={canvasSnapshot.edges}
+              open={aiSidebarOpen}
+              onClose={() => setAiSidebarOpen(false)}
             />
-          </div>
-        </div>
-
-        <AiWorkspaceSidebar
-          open={aiSidebarOpen}
-          onClose={() => setAiSidebarOpen(false)}
-        />
+          </RoomProvider>
+        </LiveblocksProvider>
       </div>
     </div>
   );

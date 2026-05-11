@@ -8,6 +8,20 @@
       "when": 1777813091120,
       "tag": "0000_fat_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778402368111,
+      "tag": "0001_youthful_the_hood",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778488738644,
+      "tag": "0002_dapper_james_howlett",
+      "breakpoints": true
     }
   ]
 }
