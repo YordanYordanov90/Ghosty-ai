@@ -673,7 +673,7 @@ function SpecMarkdown({ content }: { content: string }) {
       className={cn(
         "text-sm leading-relaxed text-copy-primary",
         "[&_h1]:text-lg [&_h1]:font-semibold [&_h1]:tracking-tight [&_h1]:text-primary-text",
-        "[&_h2]:mt-5 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-primary-text",
+        "[&_h2]:mt-5 [&_h2]:text-[1rem] [&_h2]:leading-6 [&_h2]:font-semibold [&_h2]:text-primary-text",
         "[&_h3]:mt-4 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-primary-text",
         "[&_p]:mt-3 [&_p:first-child]:mt-0",
         "[&_ul]:mt-3 [&_ul]:list-disc [&_ul]:pl-5",
@@ -709,6 +709,7 @@ function SpecsTab({
   const [isStartingGeneration, setIsStartingGeneration] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
   const [publicToken, setPublicToken] = useState<string | null>(null);
+  const [refreshCounter, setRefreshCounter] = useState(0);
 
   const [selected, setSelected] = useState<ProjectSpecListItem | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -716,32 +717,54 @@ function SpecsTab({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
-  const refreshList = useCallback(async () => {
-    if (!projectId) return;
-    setIsLoading(true);
-    setLoadError(null);
-    try {
-      const res = await fetch(`/api/projects/${projectId}/specs`, { method: "GET" });
-      if (!res.ok) {
-        const detail = await res.json().catch(() => null);
-        const msg = typeof detail?.error === "string" ? detail.error : "Failed to load specs.";
-        setLoadError(msg);
-        setItems([]);
-        return;
-      }
-      const json = (await res.json().catch(() => null)) as { specs?: ProjectSpecListItem[] } | null;
-      setItems(Array.isArray(json?.specs) ? json!.specs : []);
-    } catch {
-      setLoadError("Failed to load specs.");
-      setItems([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [projectId]);
+  // Trigger a refetch by bumping the counter — keeps fetch logic in the effect
+  // so setState calls happen during the synchronization step, not synchronously
+  // inside another effect.
+  const refreshList = useCallback(() => {
+    setRefreshCounter((c) => c + 1);
+  }, []);
 
   useEffect(() => {
-    void refreshList();
-  }, [refreshList]);
+    if (!projectId) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    (async () => {
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const res = await fetch(`/api/projects/${projectId}/specs`, {
+          method: "GET",
+          signal: controller.signal,
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          const detail = await res.json().catch(() => null);
+          const msg =
+            typeof detail?.error === "string" ? detail.error : "Failed to load specs.";
+          setLoadError(msg);
+          setItems([]);
+          return;
+        }
+        const json = (await res.json().catch(() => null)) as
+          | { specs?: ProjectSpecListItem[] }
+          | null;
+        if (cancelled) return;
+        setItems(Array.isArray(json?.specs) ? json.specs : []);
+      } catch (err) {
+        if (cancelled || (err instanceof DOMException && err.name === "AbortError")) {
+          return;
+        }
+        setLoadError("Failed to load specs.");
+        setItems([]);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [projectId, refreshCounter]);
 
   const openPreview = useCallback(
     async (spec: ProjectSpecListItem) => {
@@ -785,7 +808,7 @@ function SpecsTab({
 
       if (status === "COMPLETED") {
         setGenerateError(null);
-        await refreshList();
+        refreshList();
         return;
       }
 
@@ -922,7 +945,7 @@ function SpecsTab({
               size="sm"
               variant="ghost"
               className="h-7 px-2 text-xs text-muted-text hover:text-primary-text"
-              onClick={() => void refreshList()}
+              onClick={refreshList}
               disabled={isLoading}
             >
               Refresh
@@ -987,7 +1010,7 @@ function SpecsTab({
       )}
 
       <Dialog open={previewOpen} onOpenChange={(v) => (v ? null : closePreview())}>
-        <DialogContent className="sm:max-w-[44rem]">
+        <DialogContent className="sm:max-w-176">
           <DialogHeader>
             <DialogTitle className="truncate">
               {selected?.filename ?? "Spec preview"}
