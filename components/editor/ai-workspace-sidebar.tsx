@@ -216,16 +216,19 @@ function SpecRunTracker({
   runId,
   publicToken,
   onSettled,
+  onStatusChange,
 }: {
   runId: string;
   publicToken: string;
   onSettled: (status: string, errorMsg?: string) => void;
+  onStatusChange?: (status: string) => void;
 }) {
   const { run, error } = useRealtimeRun<typeof generateSpecTask>(runId, {
     accessToken: publicToken,
   });
 
   useEffect(() => {
+    if (run?.status) onStatusChange?.(run.status);
     if (error) {
       onSettled("ERROR", error.message);
       return;
@@ -233,9 +236,28 @@ function SpecRunTracker({
     if (!run?.status) return;
     if (run.status === "QUEUED" || run.status === "EXECUTING") return;
     onSettled(run.status);
-  }, [run?.status, error, onSettled]);
+  }, [run?.status, error, onSettled, onStatusChange]);
 
   return null;
+}
+
+function statusToUserMessage(status: string) {
+  switch (status) {
+    case "FAILED":
+      return "Spec generation failed. Try again.";
+    case "CANCELED":
+      return "Generation was canceled.";
+    case "TIMED_OUT":
+      return "Generation timed out. Try again.";
+    case "CRASHED":
+      return "Something went wrong. Try again.";
+    case "ERROR":
+      return "An error occurred. Try again.";
+    case "DEQUEUED":
+      return null;
+    default:
+      return null;
+  }
 }
 
 function ArchitectChatPanelLocal() {
@@ -696,11 +718,15 @@ function SpecsTab({
   chatHistory = [],
   nodes = [],
   edges = [],
+  sidebarOpen = true,
+  isActive = true,
 }: {
   projectId?: string;
   chatHistory?: SpecChatMessage[];
   nodes?: CanvasNode[];
   edges?: CanvasEdge[];
+  sidebarOpen?: boolean;
+  isActive?: boolean;
 }) {
   const [items, setItems] = useState<ProjectSpecListItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -710,6 +736,15 @@ function SpecsTab({
   const [runId, setRunId] = useState<string | null>(null);
   const [publicToken, setPublicToken] = useState<string | null>(null);
   const [refreshCounter, setRefreshCounter] = useState(0);
+  const [runPhase, setRunPhase] = useState<
+    "idle" | "starting" | "queued" | "executing" | "finalizing" | "failed"
+  >("idle");
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [postCompletionUntil, setPostCompletionUntil] = useState<number | null>(null);
+  const lastSeenCreatedAtRef = useRef<string | null>(null);
+  const lastSeenSpecIdRef = useRef<string | null>(null);
+  const generationBaselineCreatedAtRef = useRef<string | null>(null);
+  const generationBaselineSpecIdRef = useRef<string | null>(null);
 
   const [selected, setSelected] = useState<ProjectSpecListItem | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -766,6 +801,70 @@ function SpecsTab({
     };
   }, [projectId, refreshCounter]);
 
+  useEffect(() => {
+    if (!projectId) return;
+    if (!sidebarOpen || !isActive) return;
+    const t = window.setTimeout(() => refreshList(), 0);
+    return () => window.clearTimeout(t);
+  }, [isActive, projectId, refreshList, sidebarOpen]);
+
+  useEffect(() => {
+    if (!showCompleted) return;
+    const t = window.setTimeout(() => setShowCompleted(false), 2000);
+    return () => window.clearTimeout(t);
+  }, [showCompleted]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    if (!sidebarOpen || !isActive) return;
+
+    if (runPhase === "failed" || runPhase === "idle") return;
+
+    const interval = window.setInterval(() => {
+      if (runPhase === "finalizing" && postCompletionUntil !== null) {
+        if (Date.now() > postCompletionUntil) {
+          setPostCompletionUntil(null);
+          setRunPhase("idle");
+          return;
+        }
+      }
+      refreshList();
+    }, 2500);
+
+    return () => window.clearInterval(interval);
+  }, [
+    isActive,
+    postCompletionUntil,
+    projectId,
+    refreshList,
+    runPhase,
+    sidebarOpen,
+  ]);
+
+  useEffect(() => {
+    if (!items.length) return;
+    const head = items[0];
+    if (!head) return;
+
+    lastSeenSpecIdRef.current = head.id;
+    lastSeenCreatedAtRef.current = head.createdAt;
+
+    if (runPhase !== "finalizing") return;
+    if (runId !== null) return;
+
+    const baselineId = generationBaselineSpecIdRef.current;
+    const baselineCreatedAt = generationBaselineCreatedAtRef.current;
+    const changed =
+      !baselineId || !baselineCreatedAt
+        ? true
+        : head.id !== baselineId || head.createdAt !== baselineCreatedAt;
+    if (!changed) return;
+
+    setPostCompletionUntil(null);
+    setRunPhase("idle");
+    setShowCompleted(true);
+  }, [items, runId, runPhase]);
+
   const openPreview = useCallback(
     async (spec: ProjectSpecListItem) => {
       if (!projectId) return;
@@ -802,26 +901,63 @@ function SpecsTab({
       setIsStartingGeneration(false);
 
       if (errorMsg) {
+        setRunPhase("failed");
         setGenerateError(errorMsg);
         return;
       }
 
       if (status === "COMPLETED") {
         setGenerateError(null);
+        setRunPhase("finalizing");
+        setPostCompletionUntil(Date.now() + 10_000);
         refreshList();
         return;
       }
 
-      setGenerateError(`Spec run ended with status: ${status.toLowerCase()}.`);
+      if (status === "DEQUEUED") {
+        setGenerateError(null);
+        setRunPhase("finalizing");
+        setPostCompletionUntil(Date.now() + 10_000);
+        refreshList();
+        return;
+      }
+
+      const msg = statusToUserMessage(status);
+      if (msg) {
+        setRunPhase("failed");
+        setGenerateError(msg);
+        return;
+      }
+
+      setRunPhase("idle");
     },
     [refreshList],
   );
+
+  const onSpecRunStatusChange = useCallback((status: string) => {
+    if (status === "QUEUED") {
+      setRunPhase("queued");
+      return;
+    }
+    if (status === "EXECUTING") {
+      setRunPhase("executing");
+      return;
+    }
+    if (status === "DEQUEUED") {
+      setRunPhase("finalizing");
+    }
+  }, []);
 
   const generateSpec = useCallback(async () => {
     if (!projectId || isGenerating) return;
 
     setGenerateError(null);
     setIsStartingGeneration(true);
+    setRunPhase("starting");
+    setShowCompleted(false);
+    setPostCompletionUntil(null);
+    generationBaselineSpecIdRef.current = lastSeenSpecIdRef.current;
+    generationBaselineCreatedAtRef.current = lastSeenCreatedAtRef.current;
 
     try {
       const specRes = await fetch("/api/ai/spec", {
@@ -881,6 +1017,7 @@ function SpecsTab({
       setGenerateError("Something went wrong starting spec generation.");
       setRunId(null);
       setPublicToken(null);
+      setRunPhase("failed");
     } finally {
       setIsStartingGeneration(false);
     }
@@ -901,6 +1038,7 @@ function SpecsTab({
           runId={runId}
           publicToken={publicToken}
           onSettled={onSpecRunSettled}
+          onStatusChange={onSpecRunStatusChange}
         />
       ) : null}
 
@@ -925,6 +1063,33 @@ function SpecsTab({
           "Generate Spec"
         )}
       </Button>
+
+      {projectId ? (
+        runPhase !== "idle" || showCompleted ? (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-surface-border/70 bg-base/40 px-3 py-2 text-xs text-muted-text">
+            <div className="flex min-w-0 items-center gap-2">
+              {runPhase !== "idle" ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : null}
+              <span className="truncate">
+                {showCompleted
+                  ? "Completed"
+                  : runPhase === "starting"
+                    ? "Starting…"
+                    : runPhase === "queued"
+                      ? "Queued…"
+                      : runPhase === "executing"
+                        ? "Running…"
+                        : runPhase === "finalizing"
+                          ? "Finalizing…"
+                          : runPhase === "failed"
+                            ? "Failed"
+                            : null}
+              </span>
+            </div>
+          </div>
+        ) : null
+      ) : null}
 
       {generateError ? (
         <div className="rounded-xl border border-surface-border/70 bg-base/40 px-3 py-2 text-xs text-destructive">
@@ -1059,10 +1224,14 @@ function SpecsTabRoom({
   projectId,
   nodes,
   edges,
+  sidebarOpen,
+  isActive,
 }: {
   projectId: string;
   nodes: CanvasNode[];
   edges: CanvasEdge[];
+  sidebarOpen: boolean;
+  isActive: boolean;
 }) {
   const { messages: chatFeedMessages } = useFeedMessages(AI_CHAT_FEED_ID);
 
@@ -1083,6 +1252,8 @@ function SpecsTabRoom({
       chatHistory={chatHistory}
       nodes={nodes}
       edges={edges}
+      sidebarOpen={sidebarOpen}
+      isActive={isActive}
     />
   );
 }
@@ -1095,6 +1266,7 @@ export function AiWorkspaceSidebar({
   canvasEdges = [],
 }: AiWorkspaceSidebarProps) {
   const roomConnected = Boolean(roomId);
+  const [activeTab, setActiveTab] = useState<"architect" | "specs">("architect");
 
   return (
     <aside
@@ -1130,7 +1302,13 @@ export function AiWorkspaceSidebar({
         </Button>
       </div>
 
-      <Tabs defaultValue="architect" className="flex min-h-0 flex-1 flex-col gap-0">
+      <Tabs
+        defaultValue="architect"
+        onValueChange={(v) =>
+          setActiveTab(v === "specs" ? "specs" : "architect")
+        }
+        className="flex min-h-0 flex-1 flex-col gap-0"
+      >
         <TabsList
           variant="default"
           className="mx-3 mt-3 h-auto w-auto shrink-0 gap-1 rounded-xl bg-subtle/80 p-1"
@@ -1174,9 +1352,11 @@ export function AiWorkspaceSidebar({
               projectId={roomId}
               nodes={canvasNodes}
               edges={canvasEdges}
+              sidebarOpen={open}
+              isActive={activeTab === "specs"}
             />
           ) : (
-            <SpecsTab />
+            <SpecsTab sidebarOpen={open} isActive={activeTab === "specs"} />
           )}
         </TabsContent>
       </Tabs>
