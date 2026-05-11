@@ -3,6 +3,7 @@ import { z } from "zod"
 
 import { cursorColorFromUserId, getLiveblocks } from "@/lib/liveblocks"
 import { hasProjectAccess } from "@/lib/project-access"
+import { jsonError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
@@ -16,29 +17,31 @@ const BodySchema = z.union([
 export async function POST(req: Request) {
   const { userId } = await auth()
   if (!userId) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 })
+    return jsonError({ status: 401, error: "Unauthorized", code: "unauthorized" })
   }
 
   let body: unknown
   try {
     body = await req.json()
   } catch {
-    return Response.json({ error: "Invalid JSON" }, { status: 400 })
+    return jsonError({ status: 400, error: "Invalid JSON", code: "invalid_json" })
   }
 
   const parsed = BodySchema.safeParse(body)
   if (!parsed.success) {
-    return Response.json(
-      { error: "Invalid request body", details: parsed.error.flatten() },
-      { status: 400 },
-    )
+    return jsonError({
+      status: 400,
+      error: "Invalid request body",
+      code: "invalid_body",
+      issues: parsed.error.flatten(),
+    })
   }
 
   const projectId = "projectId" in parsed.data ? parsed.data.projectId : parsed.data.room
 
   const ok = await hasProjectAccess(projectId)
   if (!ok) {
-    return Response.json({ error: "Forbidden" }, { status: 403 })
+    return jsonError({ status: 403, error: "Forbidden", code: "forbidden" })
   }
 
   const liveblocks = getLiveblocks()
@@ -49,8 +52,13 @@ export async function POST(req: Request) {
       defaultAccesses: [],
       metadata: {},
     })
-  } catch {
-    // If already exists (or creation not required), continue.
+  } catch (err) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[/api/liveblocks-auth] createRoom failed", {
+        projectId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
   }
 
   const user = await currentUser()

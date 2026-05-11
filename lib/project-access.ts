@@ -1,5 +1,6 @@
 import { auth, currentUser } from "@clerk/nextjs/server"
 import { and, eq, sql } from "drizzle-orm"
+import { cache } from "react"
 
 import { projects, projectCollaborators } from "@/drizzle/schema"
 import { db } from "@/lib/db"
@@ -9,7 +10,8 @@ export interface UserIdentity {
   primaryEmail: string | null
 }
 
-export async function getCurrentUserIdentity(): Promise<UserIdentity | null> {
+export const getCurrentUserIdentity = cache(
+  async (): Promise<UserIdentity | null> => {
   const { userId } = await auth()
   if (!userId) return null
 
@@ -20,37 +22,45 @@ export async function getCurrentUserIdentity(): Promise<UserIdentity | null> {
     null
 
   return { userId, primaryEmail }
-}
+},
+)
 
-export async function hasProjectAccess(projectId: string): Promise<boolean> {
-  const user = await getCurrentUserIdentity()
-  if (!user) return false
+export const hasProjectAccess = cache(
+  async (projectId: string): Promise<boolean> => {
+    const user = await getCurrentUserIdentity()
+    if (!user) return false
 
-  // Check if user is owner
-  const project = await db
-    .select()
-    .from(projects)
-    .where(eq(projects.id, projectId))
-    .limit(1)
+    const emailNorm = user.primaryEmail?.trim().toLowerCase() ?? null
 
-  if (!project.length) return false // Project doesn't exist
+    if (!emailNorm) {
+      const [row] = await db
+        .select({ ownerId: projects.ownerId })
+        .from(projects)
+        .where(eq(projects.id, projectId))
+        .limit(1)
 
-  if (project[0].ownerId === user.userId) return true
+      if (!row) return false
+      return row.ownerId === user.userId
+    }
 
-  const emailNorm = user.primaryEmail?.trim().toLowerCase() ?? null
-  if (!emailNorm) return false
+    const [row] = await db
+      .select({
+        ownerId: projects.ownerId,
+        collaboratorEmail: projectCollaborators.collaboratorEmail,
+      })
+      .from(projects)
+      .leftJoin(
+        projectCollaborators,
+        and(
+          eq(projectCollaborators.projectId, projects.id),
+          sql`lower(${projectCollaborators.collaboratorEmail}) = ${emailNorm}`,
+        ),
+      )
+      .where(eq(projects.id, projectId))
+      .limit(1)
 
-  // Check if user is collaborator
-  const collaborator = await db
-    .select()
-    .from(projectCollaborators)
-    .where(
-      and(
-        eq(projectCollaborators.projectId, projectId),
-        sql`lower(${projectCollaborators.collaboratorEmail}) = ${emailNorm}`,
-      ),
-    )
-    .limit(1)
-
-  return collaborator.length > 0
-}
+    if (!row) return false
+    if (row.ownerId === user.userId) return true
+    return row.collaboratorEmail != null
+  },
+)

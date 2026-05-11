@@ -1,11 +1,11 @@
 import { auth, clerkClient } from "@clerk/nextjs/server"
 import { and, eq, sql } from "drizzle-orm"
-import { NextResponse } from "next/server"
 import { z } from "zod"
 
 import { projectCollaborators, projects } from "@/drizzle/schema"
 import { db } from "@/lib/db"
 import { getCurrentUserIdentity } from "@/lib/project-access"
+import { jsonError, jsonOk, NO_STORE_HEADERS } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
@@ -16,7 +16,7 @@ const inviteBodySchema = z.object({
 })
 
 function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  return jsonError({ status: 401, error: "Unauthorized", code: "unauthorized" })
 }
 
 async function getProjectForUser(projectId: string, userId: string, email: string | null) {
@@ -137,7 +137,11 @@ export async function GET(
   const { projectId: rawProjectId } = await context.params
   const idResult = projectIdParamSchema.safeParse(rawProjectId)
   if (!idResult.success) {
-    return NextResponse.json({ error: "Invalid project id" }, { status: 400 })
+    return jsonError({
+      status: 400,
+      error: "Invalid project id",
+      code: "invalid_project_id",
+    })
   }
   const projectId = idResult.data
 
@@ -147,10 +151,10 @@ export async function GET(
     identity.primaryEmail,
   )
   if (!access.project) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+    return jsonError({ status: 404, error: "Not found", code: "not_found" })
   }
   if (!access.canView) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return jsonError({ status: 403, error: "Forbidden", code: "forbidden" })
   }
 
   const collaboratorRows = await db
@@ -166,11 +170,10 @@ export async function GET(
     enrichCollaboratorsWithClerk(collaboratorRows),
     enrichOwnerFromClerk(access.project.ownerId),
   ])
-  return NextResponse.json({
-    collaborators,
-    canManageAccess: access.canManage,
-    owner,
-  })
+  return jsonOk(
+    { collaborators, canManageAccess: access.canManage, owner },
+    { headers: NO_STORE_HEADERS },
+  )
 }
 
 export async function POST(
@@ -183,7 +186,11 @@ export async function POST(
   const { projectId: rawProjectId } = await context.params
   const idResult = projectIdParamSchema.safeParse(rawProjectId)
   if (!idResult.success) {
-    return NextResponse.json({ error: "Invalid project id" }, { status: 400 })
+    return jsonError({
+      status: 400,
+      error: "Invalid project id",
+      code: "invalid_project_id",
+    })
   }
   const projectId = idResult.data
 
@@ -193,21 +200,21 @@ export async function POST(
     .where(eq(projects.id, projectId))
     .limit(1)
   if (!project) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+    return jsonError({ status: 404, error: "Not found", code: "not_found" })
   }
   if (project.ownerId !== userId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return jsonError({ status: 403, error: "Forbidden", code: "forbidden" })
   }
 
   let body: unknown
   try {
     body = await request.json()
   } catch {
-    return NextResponse.json({ error: "Invalid body" }, { status: 400 })
+    return jsonError({ status: 400, error: "Invalid body", code: "invalid_body" })
   }
   const parsed = inviteBodySchema.safeParse(body)
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid email" }, { status: 400 })
+    return jsonError({ status: 400, error: "Invalid email", code: "invalid_email" })
   }
   const email = parsed.data.email.trim().toLowerCase()
 
@@ -216,7 +223,7 @@ export async function POST(
     .values({ projectId, collaboratorEmail: email })
     .onConflictDoNothing()
 
-  return NextResponse.json({ success: true }, { status: 201 })
+  return jsonOk({ success: true }, { status: 201, headers: NO_STORE_HEADERS })
 }
 
 export async function DELETE(
@@ -229,7 +236,11 @@ export async function DELETE(
   const { projectId: rawProjectId } = await context.params
   const idResult = projectIdParamSchema.safeParse(rawProjectId)
   if (!idResult.success) {
-    return NextResponse.json({ error: "Invalid project id" }, { status: 400 })
+    return jsonError({
+      status: 400,
+      error: "Invalid project id",
+      code: "invalid_project_id",
+    })
   }
   const projectId = idResult.data
 
@@ -239,17 +250,17 @@ export async function DELETE(
     .where(eq(projects.id, projectId))
     .limit(1)
   if (!project) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+    return jsonError({ status: 404, error: "Not found", code: "not_found" })
   }
   if (project.ownerId !== userId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return jsonError({ status: 403, error: "Forbidden", code: "forbidden" })
   }
 
   const url = new URL(request.url)
   const email = url.searchParams.get("email")?.trim().toLowerCase() ?? ""
   const emailResult = z.email().safeParse(email)
   if (!emailResult.success) {
-    return NextResponse.json({ error: "Invalid email" }, { status: 400 })
+    return jsonError({ status: 400, error: "Invalid email", code: "invalid_email" })
   }
 
   await db
@@ -261,5 +272,5 @@ export async function DELETE(
       ),
     )
 
-  return new NextResponse(null, { status: 204 })
+  return new Response(null, { status: 204 })
 }

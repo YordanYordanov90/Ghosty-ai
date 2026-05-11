@@ -1,6 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
 import { tasks } from "@trigger.dev/sdk";
-import { NextResponse } from "next/server";
 
 import { taskRuns } from "@/drizzle/schema";
 import { db } from "@/lib/db";
@@ -9,16 +8,17 @@ import {
   normalizeDesignAgentPayload,
 } from "@/lib/design-agent-payload";
 import { hasProjectAccess } from "@/lib/project-access";
+import { devDetail, jsonError, jsonOk } from "@/lib/api-response";
 import type { designAgentTask } from "@/trigger/design-agent";
 
 export const runtime = "nodejs";
 
 function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return jsonError({ status: 401, error: "Unauthorized", code: "unauthorized" });
 }
 
 function forbidden() {
-  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return jsonError({ status: 403, error: "Forbidden", code: "forbidden" });
 }
 
 // POST /api/ai/design
@@ -32,18 +32,21 @@ export async function POST(request: Request) {
   try {
     raw = await request.json();
   } catch {
-    return NextResponse.json(
-      { error: "Invalid JSON body" },
-      { status: 400 },
-    );
+    return jsonError({
+      status: 400,
+      error: "Invalid JSON body",
+      code: "invalid_json",
+    });
   }
 
   const parsed = designAgentPayloadSchema.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid body", issues: parsed.error.flatten() },
-      { status: 400 },
-    );
+    return jsonError({
+      status: 400,
+      error: "Invalid body",
+      code: "invalid_body",
+      issues: parsed.error.flatten(),
+    });
   }
 
   let job;
@@ -52,7 +55,11 @@ export async function POST(request: Request) {
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Invalid project reference";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return jsonError({
+      status: 400,
+      error: message,
+      code: "invalid_project_reference",
+    });
   }
 
   const accessible = await hasProjectAccess(job.projectId);
@@ -69,17 +76,12 @@ export async function POST(request: Request) {
       },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json(
-      {
-        error: "Failed to trigger design task",
-        detail:
-          process.env.NODE_ENV === "development"
-            ? message
-            : "Unable to trigger design task",
-      },
-      { status: 500 },
-    );
+    return jsonError({
+      status: 500,
+      error: "Failed to trigger design task",
+      code: "trigger_failed",
+      detail: devDetail(error) ?? "Unable to trigger design task",
+    });
   }
 
   try {
@@ -94,5 +96,5 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ runId: handle.id }, { status: 202 });
+  return jsonOk({ runId: handle.id }, { status: 202 });
 }

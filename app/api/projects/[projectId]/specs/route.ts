@@ -1,11 +1,11 @@
 import { auth } from "@clerk/nextjs/server";
 import { desc, eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { projectSpecs } from "@/drizzle/schema";
 import { db } from "@/lib/db";
 import { hasProjectAccess } from "@/lib/project-access";
+import { jsonError, jsonOk, NO_STORE_HEADERS } from "@/lib/api-response";
 
 export const runtime = "nodejs";
 
@@ -14,11 +14,11 @@ const paramsSchema = z.object({
 });
 
 function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return jsonError({ status: 401, error: "Unauthorized", code: "unauthorized" });
 }
 
 function forbidden() {
-  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return jsonError({ status: 403, error: "Forbidden", code: "forbidden" });
 }
 
 function inferFilename(filePath: string, specId: string) {
@@ -39,7 +39,11 @@ export async function GET(
   const rawParams = await context.params;
   const parsedParams = paramsSchema.safeParse(rawParams);
   if (!parsedParams.success) {
-    return NextResponse.json({ error: "Invalid params" }, { status: 400 });
+    return jsonError({
+      status: 400,
+      error: "Invalid params",
+      code: "invalid_params",
+    });
   }
 
   const { projectId } = parsedParams.data;
@@ -58,12 +62,15 @@ export async function GET(
     .orderBy(desc(projectSpecs.createdAt))
     .limit(100);
 
-  return NextResponse.json({
-    specs: rows.map((r) => ({
-      id: r.id,
-      createdAt: r.createdAt.toISOString(),
-      filename: inferFilename(r.filePath, r.id),
-    })),
-  });
+  return jsonOk(
+    {
+      specs: rows.map((r) => ({
+        id: r.id,
+        createdAt: r.createdAt.toISOString(),
+        filename: inferFilename(r.filePath, r.id),
+      })),
+    },
+    { headers: NO_STORE_HEADERS },
+  );
 }
 
