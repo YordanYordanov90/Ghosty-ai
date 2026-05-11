@@ -173,6 +173,42 @@
   }
 }
 
+/* Canvas AI generation overlay: constellation drift + flicker + halo pulse */
+@keyframes ai-overlay-drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translate(var(--drift-x, 8px), var(--drift-y, -6px));
+    opacity: 0.85;
+  }
+}
+
+@keyframes ai-overlay-flicker {
+  0%,
+  70%,
+  100% {
+    stroke-opacity: 0;
+  }
+  35% {
+    stroke-opacity: 0.55;
+  }
+}
+
+@keyframes ai-overlay-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.9;
+  }
+}
+
 /* Editor canvas: dot grid (design tokens, no inline styles) */
 .editor-canvas-dots {
   background-image: radial-gradient(circle, var(--border-default) 1px, transparent 1px);
