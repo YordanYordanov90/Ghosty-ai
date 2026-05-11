@@ -6,6 +6,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core"
 
@@ -59,6 +60,7 @@ export const projectCollaborators = pgTable(
 
 export const projectsRelations = relations(projects, ({ many }) => ({
   collaborators: many(projectCollaborators),
+  specs: many(projectSpecs),
 }))
 
 export const projectCollaboratorsRelations = relations(
@@ -71,7 +73,68 @@ export const projectCollaboratorsRelations = relations(
   }),
 )
 
+export const taskRuns = pgTable(
+  "task_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    runId: text("run_id").notNull(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    ownerId: text("owner_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("task_runs_run_id_unique").on(table.runId),
+    index("task_runs_owner_id_project_id_idx").on(
+      table.ownerId,
+      table.projectId,
+    ),
+  ],
+)
+
+export const taskRunsRelations = relations(taskRuns, ({ one }) => ({
+  project: one(projects, {
+    fields: [taskRuns.projectId],
+    references: [projects.id],
+  }),
+}))
+
+export const projectSpecs = pgTable(
+  "project_specs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    filePath: text("file_path").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("project_specs_project_id_idx").on(table.projectId),
+    index("project_specs_project_id_created_at_idx").on(
+      table.projectId,
+      table.createdAt,
+    ),
+  ],
+)
+
+export const projectSpecsRelations = relations(projectSpecs, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectSpecs.projectId],
+    references: [projects.id],
+  }),
+}))
+
 export type Project = typeof projects.$inferSelect
 export type NewProject = typeof projects.$inferInsert
 export type ProjectCollaborator = typeof projectCollaborators.$inferSelect
 export type NewProjectCollaborator = typeof projectCollaborators.$inferInsert
+export type TaskRun = typeof taskRuns.$inferSelect
+export type NewTaskRun = typeof taskRuns.$inferInsert
+export type ProjectSpec = typeof projectSpecs.$inferSelect
+export type NewProjectSpec = typeof projectSpecs.$inferInsert
