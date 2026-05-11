@@ -36,19 +36,16 @@ import {
 import { useMutation, useOthers, useUpdateMyPresence } from "@liveblocks/react";
 import { useLiveblocksFlow } from "@liveblocks/react-flow";
 import {
-  ClientSideSuspense,
-  LiveblocksProvider,
-  RoomProvider,
   useCanRedo,
   useCanUndo,
   useRedo,
   useUndo,
 } from "@liveblocks/react/suspense";
-import { ErrorBoundary } from "react-error-boundary";
 import {
   Circle,
   Diamond,
   Hexagon,
+  Loader2,
   Pill,
   RectangleHorizontal,
   Database,
@@ -81,10 +78,16 @@ import Image from "next/image";
 export interface WorkspaceCanvasProps {
   roomId: string;
   onSaveStatusChange?: (status: SaveStatus) => void;
+  onCanvasSnapshotChange?: (snapshot: CanvasSnapshot) => void;
 }
 
 export interface WorkspaceCanvasHandle {
   importTemplate: (template: CanvasTemplate) => void;
+}
+
+export interface CanvasSnapshot {
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
 }
 
 const MIN_NODE_SIZE = { width: 120, height: 72 };
@@ -172,6 +175,7 @@ function PresenceCursors() {
         name: o.info?.name ?? "User",
         color: o.info?.color ?? "#00c8d4",
         cursor: o.presence?.cursor ?? null,
+        thinking: o.presence?.thinking === true,
       }))
       .filter((o) => o.cursor !== null);
   }, [others, userId]);
@@ -211,10 +215,16 @@ function PresenceCursors() {
                 />
               </svg>
               <div
-                className="absolute left-3 top-3 max-w-14 truncate rounded-full px-2 py-1 text-[11px] font-medium text-background shadow-[0_10px_30px_-18px_rgba(0,0,0,0.7)]"
+                className="absolute left-3 top-3 flex max-w-[14rem] items-center gap-1 truncate rounded-full px-2 py-1 text-[11px] font-medium text-background shadow-[0_10px_30px_-18px_rgba(0,0,0,0.7)]"
                 style={{ backgroundColor: c.color }}
               >
-                {c.name}
+                {c.thinking ? (
+                  <Loader2
+                    className="size-3 shrink-0 animate-spin text-background/95"
+                    aria-hidden
+                  />
+                ) : null}
+                <span className="min-w-0 truncate">{c.name}</span>
               </div>
             </div>
           </div>
@@ -668,10 +678,12 @@ function CanvasFlow({
   canvasHandleRef,
   roomId,
   onSaveStatusChange,
+  onCanvasSnapshotChange,
 }: {
   canvasHandleRef: Ref<WorkspaceCanvasHandle>;
   roomId: string;
   onSaveStatusChange?: (status: SaveStatus) => void;
+  onCanvasSnapshotChange?: (snapshot: CanvasSnapshot) => void;
 }) {
   const rf = useReactFlow<CanvasNode, CanvasEdge>();
   const idCounterRef = useRef(0);
@@ -735,6 +747,10 @@ function CanvasFlow({
       nodes: { initial: [] },
       edges: { initial: [] },
     });
+
+  useEffect(() => {
+    onCanvasSnapshotChange?.({ nodes, edges });
+  }, [edges, nodes, onCanvasSnapshotChange]);
 
   // ── Autosave ────────────────────────────────────────────────────────────────
   // Debounce canvas saves to Vercel Blob at 1500ms after the last change.
@@ -1210,23 +1226,28 @@ function CanvasFlow({
 interface CanvasInnerProps {
   roomId: string;
   onSaveStatusChange?: (status: SaveStatus) => void;
+  onCanvasSnapshotChange?: (snapshot: CanvasSnapshot) => void;
 }
 
 const CanvasInner = forwardRef<WorkspaceCanvasHandle, CanvasInnerProps>(
-  function CanvasInnerInner({ roomId, onSaveStatusChange }, ref) {
+  function CanvasInnerInner(
+    { roomId, onSaveStatusChange, onCanvasSnapshotChange },
+    ref,
+  ) {
     return (
       <ReactFlowProvider>
         <CanvasFlow
           canvasHandleRef={ref}
           roomId={roomId}
           onSaveStatusChange={onSaveStatusChange}
+          onCanvasSnapshotChange={onCanvasSnapshotChange}
         />
       </ReactFlowProvider>
     );
   },
 );
 
-function CanvasLoading() {
+export function WorkspaceCanvasLoading() {
   return (
     <div className="flex h-full w-full items-center justify-center">
       <div className="rounded-2xl border border-border-default/70 bg-elevated/35 px-6 py-4 text-sm text-muted-foreground shadow-[0_0_0_1px_color-mix(in_oklab,var(--accent-primary)_12%,transparent)] backdrop-blur-[2px]">
@@ -1236,7 +1257,7 @@ function CanvasLoading() {
   );
 }
 
-function CanvasErrorFallback() {
+export function WorkspaceCanvasErrorFallback() {
   return (
     <div className="flex h-full w-full items-center justify-center">
       <div className="max-w-md rounded-2xl border border-destructive/40 bg-destructive/10 px-6 py-4 text-sm text-foreground">
@@ -1249,25 +1270,16 @@ function CanvasErrorFallback() {
 export const WorkspaceCanvas = forwardRef<
   WorkspaceCanvasHandle,
   WorkspaceCanvasProps
->(function WorkspaceCanvasInner({ roomId, onSaveStatusChange }, ref) {
-  const initialPresence = useMemo(
-    () => ({ cursor: null, thinking: false }),
-    [],
-  );
-
+>(function WorkspaceCanvasInner(
+  { roomId, onSaveStatusChange, onCanvasSnapshotChange },
+  ref,
+) {
   return (
-    <LiveblocksProvider authEndpoint="/api/liveblocks-auth">
-      <RoomProvider id={roomId} initialPresence={initialPresence}>
-        <ErrorBoundary fallback={<CanvasErrorFallback />}>
-          <ClientSideSuspense fallback={<CanvasLoading />}>
-            <CanvasInner
-              ref={ref}
-              roomId={roomId}
-              onSaveStatusChange={onSaveStatusChange}
-            />
-          </ClientSideSuspense>
-        </ErrorBoundary>
-      </RoomProvider>
-    </LiveblocksProvider>
+    <CanvasInner
+      ref={ref}
+      roomId={roomId}
+      onSaveStatusChange={onSaveStatusChange}
+      onCanvasSnapshotChange={onCanvasSnapshotChange}
+    />
   );
 });

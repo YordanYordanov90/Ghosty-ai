@@ -2,8 +2,9 @@ import { auth } from "@clerk/nextjs/server"
 import { eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 import { z } from "zod"
+import { del } from "@vercel/blob"
 
-import { projects } from "@/drizzle/schema"
+import { projectSpecs, projects } from "@/drizzle/schema"
 import { db } from "@/lib/db"
 
 export const runtime = "nodejs"
@@ -96,6 +97,25 @@ export async function DELETE(
   }
   if (existing.ownerId !== userId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
+  // Best-effort Blob cleanup (DB cascade does not delete Vercel Blob objects).
+  // Must happen before DB delete so we can still read blob URLs.
+  try {
+    const specRows = await db
+      .select({ filePath: projectSpecs.filePath })
+      .from(projectSpecs)
+      .where(eq(projectSpecs.projectId, projectId))
+
+    const urls: string[] = []
+    if (existing.canvasJsonPath) urls.push(existing.canvasJsonPath)
+    for (const row of specRows) urls.push(row.filePath)
+
+    if (urls.length > 0) {
+      await del(urls)
+    }
+  } catch {
+    // Swallow errors so project deletion isn't blocked by blob cleanup.
   }
 
   await db.delete(projects).where(eq(projects.id, projectId))
